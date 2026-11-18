@@ -302,6 +302,17 @@ export const SITE_OVERLAY: Record<string, StationOverlay> = {
     // contractDemandKva. See docs/dashboard-api-mapping.md section 7.
   },
 
+  /* EMS-gateway-backend2 gateways. Names only — no nameplate, commissioning
+     date or tariff is known yet, so those stay unset and render as "—". */
+  "1545be97-67a4-4491-9bc8-48070fe9e607": {   // test-gw-01 · cleanedge_kinetics
+    powerStationName: "Cleanedge",
+    powerStationEnglishName: "Cleanedge",
+  },
+  "ed61e2a6-4866-4cde-8a8e-7a70e2a64efd": {   // ems-gw-1 · kalpa_lineage_elecod
+    powerStationName: "Kalpa",
+    powerStationEnglishName: "Kalpa",
+  },
+
   /* The demo plant behind the `customer` sign-in (lib/server/central/demo.ts).
      Every figure here is as made up as its telemetry. */
   [DEMO_GATEWAY_ID]: {

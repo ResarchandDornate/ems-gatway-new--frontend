@@ -355,11 +355,27 @@ export function ownedS2Tokens(base: string, auth: string, gw: string): Promise<S
   entry.p = (async () => {
     try {
       const qs = new URLSearchParams({ site_id: SITE_ID(), gateway_id: gw, limit: "1" });
-      const r = await fetch(`${base}/api/v1/health/latest?${qs}`, { headers: { authorization: auth, accept: "application/json" }, cache: "no-store" });
-      const rows = r.ok ? unwrap(await r.json()) : [];
+      const hdrs = { authorization: auth, accept: "application/json" };
+      const [hr, fr] = await Promise.all([
+        fetch(`${base}/api/v1/health/latest?${qs}`, { headers: hdrs, cache: "no-store" }),
+        fetch(`${base}/api/v1/bess/fast/latest?${qs}`, { headers: hdrs, cache: "no-store" }).catch(() => null),
+      ]);
+      const rows = hr.ok ? unwrap(await hr.json()) : [];
       const p = obj(Array.isArray(rows) ? (rows[0] as Record<string, unknown> | undefined)?.payload : undefined);
       const sources = Array.isArray(p.sources) ? (p.sources as { source_id?: unknown }[]) : [];
       const own = new Set(sources.map((s) => tokenOf(s.source_id)).filter(Boolean));
+      /* The S1 profile name lists the gateway's vendors too
+         (cleanedge_kinetics_fast_v1 → cleanedge, kinetics). Needed because a
+         gateway's health roster can use generic ids (test-gw-01 reports
+         bms_bms_source / pcs_pcs_source) while its S2 rows carry the vendor
+         ones (kinetics_pcs_source) — without this it owned none of its S2. */
+      try {
+        const frows = fr?.ok ? unwrap(await fr.json()) : [];
+        const fp = obj(Array.isArray(frows) ? (frows[0] as Record<string, unknown> | undefined)?.payload : undefined);
+        for (const t of String(fp.profile_name ?? "").split("_")) {
+          if (t && !/^(fast|slow|v\d+|bms|pcs|source)$/i.test(t)) own.add(t);
+        }
+      } catch { /* health tokens alone */ }
       if (!own.size) entry.ttl = 30_000;   // retry soon rather than hold "owns nothing"
       return own;
     } catch {
