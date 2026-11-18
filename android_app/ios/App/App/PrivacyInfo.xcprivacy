@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Apple requires this manifest at submission and rejects a build whose
+	     declarations disagree with what the binary does. Every entry below was
+	     checked rather than assumed; re-check before each submission, the same
+	     way docs/PLAY_DATA_SAFETY.md asks for its own audit to be re-run.
+
+	     No required-reason API is used. Neither the app's own Swift
+	     (AppDelegate, SceneDelegate) nor the Capacitor bridge nor the three
+	     installed plugins — App, SplashScreen, StatusBar — call UserDefaults,
+	     file timestamp, disk space, active keyboard or system boot time APIs.
+	     Verified by grep across node_modules/@capacitor. Adding a plugin can
+	     change this: @capacitor/preferences, for one, is UserDefaults and would
+	     need CA92.1 declared here. -->
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array/>
+
+	<!-- Nothing is collected in Apple's sense: nothing is transmitted off the
+	     device and retained by us. The sign-in goes to our proxy, which
+	     forwards the caller's own token to their site gateway and keeps no
+	     login of its own (mobile_app_kunal_backend/gateway/proxy.ts). The token
+	     is held in WebView localStorage on the device and cleared on sign-out.
+
+	     If a future build adds crash reporting, analytics or any server-side
+	     account store, that stops being true and this array has to grow. -->
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+
+	<!-- No tracking, no ad or attribution SDK, no third-party network calls.
+	     The only host this app contacts is its own proxy. -->
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+</dict>
+</plist>

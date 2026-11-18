@@ -1,0 +1,280 @@
+<title>UnityESS Frontend Architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chivo:wght@400;500;600;700&family=Chivo+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one column of stacked layers (request path, top to bottom), each a label rail + chip field, joined by hop notes; then a screen × data-stream matrix. */
+:root {
+  --bg: #EEF1F7;
+  --surface: #FFFFFF;
+  --surface-2: #F4F6FA;
+  --line: #D5DCE7;
+  --fg: #0E1A28;
+  --muted: #586678;
+  --accent: #0A7D92;
+  --accent-soft: #DDF1F4;
+  --accent-2: #2563EB;
+  --warn: #A15C00;
+  --warn-soft: #FBEFD9;
+  --off: #8A95A5;
+  --off-soft: #ECEEF2;
+  --font-display: "Chivo", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-body: "Chivo", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Chivo Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #08111B; --surface: #0C1724; --surface-2: #112030; --line: #1F3247;
+  --fg: #E3EAF3; --muted: #8C9CB0; --accent: #2CC9DE; --accent-soft: #0F2D38;
+  --accent-2: #5B9BFF; --warn: #F0B357; --warn-soft: #2E2410; --off: #6C7A8C; --off-soft: #152131;
+  color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #08111B; --surface: #0C1724; --surface-2: #112030; --line: #1F3247;
+  --fg: #E3EAF3; --muted: #8C9CB0; --accent: #2CC9DE; --accent-soft: #0F2D38;
+  --accent-2: #5B9BFF; --warn: #F0B357; --warn-soft: #2E2410; --off: #6C7A8C; --off-soft: #152131;
+  color-scheme: dark; }
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1120px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 64px; display: flex; flex-direction: column; gap: 48px; }
+@media (max-width: 480px) { .wrap { padding-inline: 16px; } }
+
+header { display: flex; flex-direction: column; gap: 10px; max-width: 70ch; }
+.eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: clamp(28px, 4vw, 40px); line-height: 1.1; margin: 0; text-wrap: balance; letter-spacing: -.01em; }
+h2 { font-family: var(--font-display); font-weight: 600; font-size: 22px; margin: 0; text-wrap: balance; }
+p { margin: 0; }
+.lede { color: var(--muted); font-size: 16px; }
+code, .mono { font-family: var(--font-mono); font-size: .86em; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 13px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--line); background: var(--surface); }
+.sw.live { background: var(--accent-soft); border-color: var(--accent); }
+.sw.store { background: var(--warn-soft); border-color: var(--warn); }
+.sw.off { background: var(--off-soft); border-color: var(--off); border-style: dashed; }
+
+section { display: flex; flex-direction: column; gap: 18px; }
+.section-head { display: flex; flex-direction: column; gap: 6px; max-width: 72ch; }
+.section-head p { color: var(--muted); }
+
+/* Layer stack */
+.stack { display: flex; flex-direction: column; }
+.layer { display: grid; grid-template-columns: 220px minmax(0, 1fr); background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.layer .rail { padding: 16px 18px; background: var(--surface-2); border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
+.layer .rail b { font-family: var(--font-display); font-weight: 600; font-size: 15px; }
+.layer .rail .mono { color: var(--muted); font-size: 12px; word-break: break-word; }
+.layer .field { padding: 14px; display: flex; flex-wrap: wrap; gap: 8px; align-content: flex-start; min-width: 0; }
+.layer .field.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; }
+@media (max-width: 720px) {
+  .layer { grid-template-columns: 1fr; }
+  .layer .rail { border-right: 0; border-bottom: 1px solid var(--line); }
+}
+.hop { display: flex; align-items: center; gap: 12px; padding: 8px 0 8px 108px; color: var(--muted); font-size: 13px; }
+.hop::before { content: ""; flex: none; width: 2px; height: 28px; background: linear-gradient(var(--accent), var(--accent)) center / 2px 100% no-repeat; position: relative; }
+.hop .arrow { color: var(--accent); font-family: var(--font-mono); margin-left: -10px; }
+@media (max-width: 720px) { .hop { padding-left: 18px; } }
+
+.chip { font-family: var(--font-mono); font-size: 12.5px; padding: 5px 9px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); white-space: nowrap; }
+.chip.live { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.chip.store { background: var(--warn-soft); border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); }
+.chip.off { background: var(--off-soft); border-style: dashed; color: var(--off); }
+
+.box { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; min-width: 0; background: var(--surface); }
+.box.live { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.box.store { border-color: color-mix(in srgb, var(--warn) 55%, var(--line)); }
+.box.off { border-style: dashed; color: var(--muted); }
+.box h3 { margin: 0; font-size: 14px; font-weight: 600; display: flex; justify-content: space-between; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.box h3 .mono { font-weight: 400; color: var(--muted); font-size: 12px; }
+.box p { font-size: 13px; color: var(--muted); }
+.box .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.pill { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; padding: 2px 7px; border-radius: 999px; }
+.pill.live { color: var(--accent); background: var(--accent-soft); }
+.pill.off { color: var(--off); background: var(--off-soft); }
+.pill.store { color: var(--warn); background: var(--warn-soft); }
+
+/* Matrix */
+.table-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; min-width: 860px; font-size: 13px; }
+th, td { padding: 9px 10px; border-bottom: 1px solid var(--line); text-align: center; }
+thead th { font-family: var(--font-mono); font-weight: 500; font-size: 11.5px; color: var(--muted); background: var(--surface-2); position: sticky; top: 0; }
+thead th.grp { border-bottom: 0; padding-bottom: 2px; text-transform: uppercase; letter-spacing: .06em; font-size: 10.5px; }
+tbody th { text-align: left; font-weight: 500; white-space: nowrap; }
+tbody th .mono { display: block; color: var(--muted); font-weight: 400; font-size: 11.5px; }
+tbody tr:last-child > * { border-bottom: 0; }
+tbody tr:hover { background: var(--surface-2); }
+td.y::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
+td.s::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: var(--warn); }
+td.x::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 50%; border: 1.5px dashed var(--off); }
+.sep { border-left: 1px solid var(--line); }
+
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+ul.rules { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 8px; max-width: 80ch; }
+ul.rules li::marker { color: var(--accent); }
+footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 16px; }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">unityess-ems-frontend · v0.2.0 · Next 16 App Router</div>
+    <h1>UnityESS Frontend Architecture</h1>
+    <p class="lede">How a screen gets its data: from the three browser builds, through the shell and React Query hooks, to the same-origin API routes that proxy the Central EMS Backend or answer from this server's own store.</p>
+    <div class="legend" aria-label="Legend">
+      <span><i class="sw live"></i>Central EMS Backend (live)</span>
+      <span><i class="sw store"></i>This server's JSON store</span>
+      <span><i class="sw off"></i>NorthBound gateway path (disabled, 503)</span>
+    </div>
+  </header>
+
+  <section aria-labelledby="stack-h">
+    <div class="section-head">
+      <h2 id="stack-h">Request path</h2>
+      <p>Every browser read is same-origin. No backend origin is compiled into client code.</p>
+    </div>
+
+    <div class="stack">
+      <div class="layer">
+        <div class="rail"><b>Browser builds</b><span class="mono">app/</span></div>
+        <div class="field cols">
+          <div class="box live"><h3>Web console <span class="mono">/(ems)/*</span></h3><p>The operator EMS. 16 routes; <code>/</code> redirects to <code>/dashboard</code>. Chivo + Chivo Mono, tokens in <code>globals.css</code>.</p></div>
+          <div class="box off"><h3>Customer app <span class="mono">/k/[[...slug]]</span></h3><p><code>ScreenRouter</code> from <code>mobile_app_kunal_backend/</code>. Reads <code>/api/gw</code>, which now answers 503. Capacitor wrap for the Play Store.</p></div>
+          <div class="box"><h3>Mobile design spec <span class="mono">/m/*</span></h3><p><code>mobile-app/</code> screens on sample data (<code>data.ts</code>). Reference for the native KMP build; <code>/m/demo</code> mirrors it.</p></div>
+        </div>
+      </div>
+
+      <div class="hop"><span class="arrow">▼</span>wrapped by the root layout</div>
+
+      <div class="layer">
+        <div class="rail"><b>Shell &amp; providers</b><span class="mono">app/layout.tsx · providers.tsx · (ems)/layout.tsx</span></div>
+        <div class="field">
+          <span class="chip">PersistQueryClientProvider</span>
+          <span class="chip">AuthGate → LoginModal</span>
+          <span class="chip">StationProvider</span>
+          <span class="chip">UnitProvider</span>
+          <span class="chip">FinancialYearContext</span>
+          <span class="chip">TopBar</span>
+          <span class="chip">SubHeader (station bar)</span>
+          <span class="chip">--chrome-h measured</span>
+        </div>
+      </div>
+
+      <div class="hop"><span class="arrow">▼</span>route renders a module from components/modules or components/dashboard</div>
+
+      <div class="layer">
+        <div class="rail"><b>Screens</b><span class="mono">app/(ems)/&lt;route&gt;/page.tsx</span></div>
+        <div class="field">
+          <span class="chip live">dashboard</span><span class="chip live">power-station</span><span class="chip live">equipment</span>
+          <span class="chip live">live-bess</span><span class="chip live">asset-telemetry</span><span class="chip live">alarms</span>
+          <span class="chip live">gateway-health</span><span class="chip live">strategy</span><span class="chip live">financials</span>
+          <span class="chip live">settings</span><span class="chip live">energy-twin</span><span class="chip live">data-analysis</span>
+          <span class="chip live">curve-report</span><span class="chip">tag-mapping</span>
+          <span class="chip off">history</span><span class="chip off">scada</span>
+        </div>
+      </div>
+
+      <div class="hop"><span class="arrow">▼</span>React Query · retry 2 · stale 30 s · persisted 24 h in localStorage (buster <code>v12-comm-captured-times</code>)</div>
+
+      <div class="layer">
+        <div class="rail"><b>Hooks &amp; services</b><span class="mono">hooks/use*.ts · lib/api/services/*.service.ts</span></div>
+        <div class="field cols">
+          <div class="box"><h3>Central services</h3><p>Fold raw streams into screen models.</p><div class="chips"><span class="chip live">dashboardCentral</span><span class="chip live">powerStationCentral</span><span class="chip live">alarmsCentral</span><span class="chip live">pointsCentral</span><span class="chip live">dailyEnergyCentral</span><span class="chip live">strategyCentral</span><span class="chip live">analysisCentral</span><span class="chip live">cabinetCentral</span></div></div>
+          <div class="box"><h3>Direct stream hooks</h3><p>Thin wrappers over one reader each.</p><div class="chips"><span class="chip live">useFastBess</span><span class="chip live">useGeneral</span><span class="chip live">useController</span><span class="chip live">useSolisCentral</span><span class="chip live">useEdgeAi</span><span class="chip live">useGatewayHealth</span><span class="chip live">useAlarms</span><span class="chip live">useBessLiveCentral</span></div></div>
+          <div class="box off"><h3>Legacy gateway services</h3><p>Import <code>lib/gateway</code>, which is stubbed at module level. They make no HTTP call.</p><div class="chips"><span class="chip off">history</span><span class="chip off">scada</span><span class="chip off">energyFlows</span><span class="chip off">maxDemand</span><span class="chip off">dataAnalysis</span><span class="chip off">curveReport (part)</span></div></div>
+        </div>
+      </div>
+
+      <div class="hop"><span class="arrow">▼</span>lib/central/* readers · bearer from lib/central/session · decoded by lib/central/decode</div>
+
+      <div class="layer">
+        <div class="rail"><b>Same-origin API</b><span class="mono">app/api/**/route.ts</span></div>
+        <div class="field cols">
+          <div class="box live"><h3>/api/central/[...path] <span class="pill live">proxy</span></h3><p>Forwards to <code>CENTRAL_BASE_URL</code>. Login, <code>/auth/me</code>, and every <code>/gateways/{id}/…</code> stream.</p></div>
+          <div class="box store"><h3>Server-kept data <span class="pill store">store</span></h3><p>What the backend has nowhere to keep. One JSON document per gateway.</p><div class="chips"><span class="chip store">/api/history/[stream]</span><span class="chip store">/api/alarm-acks</span><span class="chip store">/api/revenue-master</span><span class="chip store">/api/monthly-discharge</span></div></div>
+          <div class="box"><h3>Config, files, push</h3><p>Runtime config instead of baked <code>NEXT_PUBLIC_*</code>; drawings checked against <code>/auth/me</code>.</p><div class="chips"><span class="chip">/api/app-config</span><span class="chip">/api/drawings/[file]</span><span class="chip">/api/push</span><span class="chip">/api/push/test</span><span class="chip">/api/sites</span></div></div>
+          <div class="box off"><h3>/api/gw/* <span class="pill off">503</span></h3><p>NorthBound proxy, AI and history-series. Commented out in place so callers get a clear 503.</p></div>
+        </div>
+      </div>
+
+      <div class="hop"><span class="arrow">▼</span>server to server</div>
+
+      <div class="layer">
+        <div class="rail"><b>Upstream</b><span class="mono">CENTRAL_BASE_URL · STORE_ROOT</span></div>
+        <div class="field cols">
+          <div class="box live"><h3>Central EMS Backend</h3><p>Per-gateway streams at <code>/gateways/{id}/</code>:</p><div class="chips"><span class="chip live">fast-bess</span><span class="chip live">general</span><span class="chip live">alarms</span><span class="chip live">controller</span><span class="chip live">solis</span><span class="chip live">edge-ai</span><span class="chip live">health</span><span class="chip live">config-audit</span></div></div>
+          <div class="box store"><h3>Local JSON store</h3><p><code>lib/server/central/store.ts</code>. Appended by the collector; also holds acks, revenue master, push subscriptions.</p></div>
+          <div class="box off"><h3>NorthBound gateway</h3><p>ems-api public endpoint returns 503. Kept for <code>/k</code> once a new path (likely an SSH tunnel) exists.</p></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="bg-h">
+    <div class="section-head">
+      <h2 id="bg-h">Background work on the server</h2>
+      <p>Started once per Node process from <code>instrumentation.ts</code>. Each one stays off until its environment is configured.</p>
+    </div>
+    <div class="grid2">
+      <div class="box store"><h3>Collector <span class="mono">lib/server/central/collector.ts</span></h3><p>Every 5 min: S2 key points, controller, solis, alarms, edge-ai, health. Every minute: one fast-bess sample per cabinet. Uses a read-only account (<code>CENTRAL_COLLECTOR_EMAIL</code>). Cannot backfill gaps the gateway never uploaded.</p></div>
+      <div class="box"><h3>Push watcher <span class="mono">lib/server/push/push.ts</span></h3><p>Reads alarms with the collector's token and sends lock-screen Web Push alerts. Needs <code>WEB_PUSH_*</code> VAPID keys.</p></div>
+      <div class="box off"><h3>Backfill <span class="mono">mobile_app_kunal_backend/gateway/backfill.ts</span></h3><p>Fills the <code>/k</code> history chunk store from the gateway. Idle while the gateway path is down.</p></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="matrix-h">
+    <div class="section-head">
+      <h2 id="matrix-h">Which screen reads which stream</h2>
+      <p>Traced from each route's module folder through its hooks and services to the <code>lib/central</code> reader or API route it ends at. Screens that share a module folder (Live BESS, Asset Telemetry, Gateway Health) may read slightly less than shown.</p>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th rowspan="2" style="text-align:left">Screen</th>
+            <th class="grp" colspan="7">Central backend stream</th>
+            <th class="grp sep" colspan="3">Server store</th>
+            <th class="grp sep">Legacy</th>
+          </tr>
+          <tr>
+            <th>fast-bess</th><th>general</th><th>alarms</th><th>controller</th><th>solis</th><th>edge-ai</th><th>health</th>
+            <th class="sep">history</th><th>acks</th><th>revenue</th>
+            <th class="sep">gateway</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><th>Dashboard<span class="mono">/dashboard</span></th><td class="y"></td><td class="y"></td><td class="y"></td><td class="y"></td><td class="y"></td><td></td><td></td><td class="s sep"></td><td class="s"></td><td class="s"></td><td class="x sep"></td></tr>
+          <tr><th>Power Station<span class="mono">/power-station</span></th><td class="y"></td><td class="y"></td><td class="y"></td><td class="y"></td><td class="y"></td><td></td><td class="y"></td><td class="s sep"></td><td class="s"></td><td class="s"></td><td class="sep"></td></tr>
+          <tr><th>Equipment<span class="mono">/equipment</span></th><td class="y"></td><td class="y"></td><td></td><td></td><td class="y"></td><td></td><td></td><td class="s sep"></td><td></td><td></td><td class="sep"></td></tr>
+          <tr><th>Live BESS<span class="mono">/live-bess</span></th><td class="y"></td><td></td><td></td><td></td><td></td><td></td><td></td><td class="sep"></td><td></td><td></td><td class="sep"></td></tr>
+          <tr><th>Asset Telemetry<span class="mono">/asset-telemetry</span></th><td class="y"></td><td class="y"></td><td></td><td></td><td></td><td></td><td></td><td class="s sep"></td><td></td><td></td><td class="sep"></td></tr>
+          <tr><th>Alarms<span class="mono">/alarms</span></th><td class="y"></td><td class="y"></td><td class="y"></td><td></td><td></td><td class="y"></td><td></td><td class="s sep"></td><td class="s"></td><td></td><td class="sep"></td></tr>
+          <tr><th>Gateway Health<span class="mono">/gateway-health</span></th><td></td><td></td><td></td><td></td><td></td><td></td><td class="y"></td><td class="sep"></td><td></td><td></td><td class="sep"></td></tr>
+          <tr><th>Strategy<span class="mono">/strategy</span></th><td></td><td class="y"></td><td></td><td class="y"></td><td></td><td></td><td></td><td class="sep"></td><td></td><td></td><td class="sep"></td></tr>
+          <tr><th>Financials<span class="mono">/financials</span></th><td class="y"></td><td class="y"></td><td></td><td class="y"></td><td class="y"></td><td></td><td></td><td class="s sep"></td><td></td><td class="s"></td><td class="sep"></td></tr>
+          <tr><th>Settings<span class="mono">/settings</span></th><td class="y"></td><td class="y"></td><td></td><td class="y"></td><td class="y"></td><td></td><td></td><td class="s sep"></td><td></td><td class="s"></td><td class="sep"></td></tr>
+          <tr><th>Energy Twin<span class="mono">/energy-twin</span></th><td class="y"></td><td class="y"></td><td></td><td class="y"></td><td class="y"></td><td></td><td></td><td class="s sep"></td><td></td><td></td><td class="sep"></td></tr>
+          <tr><th>Data Analysis<span class="mono">/data-analysis</span></th><td class="y"></td><td class="y"></td><td></td><td class="y"></td><td></td><td></td><td></td><td class="s sep"></td><td></td><td></td><td class="x sep"></td></tr>
+          <tr><th>Curve Report<span class="mono">/curve-report</span></th><td class="y"></td><td class="y"></td><td></td><td></td><td></td><td></td><td></td><td class="s sep"></td><td></td><td></td><td class="x sep"></td></tr>
+          <tr><th>History<span class="mono">/history</span></th><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td class="sep"></td><td></td><td></td><td class="x sep"></td></tr>
+          <tr><th>SCADA<span class="mono">/scada</span></th><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td class="sep"></td><td></td><td></td><td class="x sep"></td></tr>
+          <tr><th>Tag Mapping<span class="mono">/tag-mapping</span></th><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td class="sep"></td><td></td><td></td><td class="sep"></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="legend">
+      <span><i class="sw live" style="border-radius:50%"></i>reads the stream live</span>
+      <span><i class="sw store"></i>reads this server's store</span>
+      <span><i class="sw off" style="border-radius:50%"></i>calls the stubbed gateway (returns nothing)</span>
+    </div>
+  </section>
+
+  <section aria-labelledby="rules-h">
+    <div class="section-head"><h2 id="rules-h">Rules the structure enforces</h2></div>
+    <ul class="rules">
+      <li>Readings, charts and exports use the backend's sample or event time, never the browser clock.</li>
+      <li>Bump the React Query <code>buster</code> in <code>app/providers.tsx</code> whenever a cached response shape changes, or returning browsers rehydrate the old shape.</li>
+      <li>Large series opt out of localStorage with <code>meta: {persist: false}</code> and keep their own store (<code>lib/central/fastStore</code>).</li>
+      <li>The gateway ID comes from <code>/api/app-config</code> at runtime, so changing it needs no rebuild.</li>
+      <li>Shell tokens and primitives live in <code>app/globals.css</code>; modules don't define their own.</li>
+    </ul>
+  </section>
+
+  <footer>Generated from the <code>main</code> branch at commit <span class="mono">b01c44e</span>, 14 Oct 2026. Source: <code>docs/frontend-architecture.html</code>.</footer>
+</div>

@@ -1,0 +1,44 @@
+{
+  "name": "unityess-android-app",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Standalone static build of the /k gateway UI, for wrapping with Capacitor.",
+  "scripts": {
+    "dev": "vite",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "icons": "capacitor-assets generate --android --ios --assetPath assets"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.5.0",
+    "@capacitor/app": "8.1.1",
+    "@capacitor/core": "8.5.0",
+    "@capacitor/ios": "8.5.0",
+    "@capacitor/splash-screen": "8.0.2",
+    "@capacitor/status-bar": "8.0.3",
+    "@fontsource/inter": "5.1.0",
+    "@react-three/drei": "10.7.8",
+    "@react-three/fiber": "9.7.0",
+    "@tanstack/query-sync-storage-persister": "5.100.9",
+    "@tanstack/react-query": "5.100.9",
+    "@tanstack/react-query-persist-client": "5.100.9",
+    "clsx": "2.1.1",
+    "lucide-react": "0.454.0",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "recharts": "2.15.4",
+    "three": "0.184.0"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "3.0.5",
+    "@capacitor/cli": "8.5.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@types/three": "^0.184.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.6.3",
+    "vite": "^6.0.11"
+  }
+}

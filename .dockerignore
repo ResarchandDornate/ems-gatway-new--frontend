@@ -1,0 +1,36 @@
+# Build context for the Dockerfile.
+#
+# The image installs its own dependencies in the deps stage and then runs
+# `COPY . .`. Without this file that COPY lands on top of the freshly installed
+# node_modules with whatever happens to be sitting in the checkout — and the
+# deploy does `git reset --hard`, which leaves untracked directories in place.
+# A stale node_modules or .next on the runner would silently replace the one
+# the image just built, and the failure would look like a code bug.
+
+# Dependency and build output, at every level
+node_modules
+**/node_modules
+.next
+**/.next
+dist
+**/dist
+
+# Secrets. Not in the runner's checkout because they are gitignored, but a
+# local `docker build` would otherwise bake them into an image layer, where
+# they survive deletion.
+.env
+.env.local
+.env*.local
+
+# The Android project. Nothing in the web build imports it, and it is 77 files
+# of Gradle scaffolding that would be copied on every deploy.
+android_app
+
+# Version control and editor state
+.git
+.github
+.claude
+*.log
+
+# Documents — several megabytes of PDF and DOCX with no role in the image
+docs

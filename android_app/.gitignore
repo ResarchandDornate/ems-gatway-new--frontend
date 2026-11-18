@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.env
+.env.local
+.env.production.local
+# The generated native project IS committed: icons, manifest permissions and
+# the Phase 5 signing config are edited by hand, and regenerating discards them.
+# Its build output is not.
+android/app/build/
+android/build/
+android/.gradle/
+android/local.properties
+# The upload key and its password. Never committed.
+android/keystore.properties
+android/*.jks
+android/app/release/
+.capacitor/

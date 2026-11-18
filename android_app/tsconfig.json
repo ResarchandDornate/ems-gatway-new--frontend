@@ -1,0 +1,77 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "types": ["vite/client"],
+    "baseUrl": ".",
+    "paths": {
+      "next/navigation": ["./src/shims/next-navigation.ts"],
+      "next/dynamic": ["./src/shims/next-dynamic.tsx"],
+      // Reached only through a type-only import chain that survives erasure —
+      // see the shim's own comment for why `exclude` cannot break it and why
+      // the failure appears on CI and never on a developer machine.
+      "next/server": ["./src/shims/next-server.ts"],
+
+      // The shared source sits beside the Next app's node_modules, so TS
+      // resolves its React types from there — @types/react 18, whose
+      // Component still declares `refs`. React 19 removed it, so every
+      // component typed against the 18 definitions is rejected as a JSX
+      // element. Pin both packages at this project's own copies.
+      "react": ["./node_modules/@types/react"],
+      "react/*": ["./node_modules/@types/react/*"],
+      "react-dom": ["./node_modules/@types/react-dom"],
+      "react-dom/*": ["./node_modules/@types/react-dom/*"],
+
+      // Node resolution walks UP from the importing file, so a bare import in
+      // ../mobile_app_kunal_backend looks in the repo root's node_modules and
+      // never in this project's. That happens to work on a machine where the
+      // Next app is also installed, and fails on a clean checkout where it is
+      // not — clsx and lucide-react went missing on CI for exactly this reason.
+      // three ships no types of its own, and the wildcard below would map it
+      // straight to the JS package and never consult @types.
+      "three": ["./node_modules/@types/three"],
+
+      // The Next app's root alias. The energy scene and its data contract are
+      // shared with the web dashboard rather than copied into this project, so
+      // the shared source imports them as @/components/energy3d/... and
+      // @/lib/energy/... — see the matching alias in vite.config.ts for why
+      // this maps to the whole root rather than to a curated list.
+      "@/*": ["../*"],
+
+      // This is the fallback: anything unresolved is looked up here.
+      "*": ["./node_modules/*"]
+    }
+  },
+  "include": ["src", "vite.config.ts", "../mobile_app_kunal_backend"],
+  // Server-only modules. They import `next/server` or the Anthropic SDK,
+  // neither of which is a dependency of this project — and should not be: the
+  // bundle never runs them, and the Vite build proves it by never pulling one
+  // into a chunk. Excluding them here keeps this typecheck honest about what
+  // the phone actually compiles.
+  //
+  // Note `exclude` only stops a file being a ROOT file; an excluded file that
+  // something else imports is still checked. That is why sitesRoute.ts has to
+  // be listed alongside proxy.ts — it imports proxy, which dragged proxy's
+  // `next/server` error back in and had this job failing on every push,
+  // including commits that touched nothing but markdown.
+  "exclude": [
+    "../mobile_app_kunal_backend/_removed",
+    "../mobile_app_kunal_backend/gateway/proxy.ts",
+    "../mobile_app_kunal_backend/gateway/capture.ts",
+    "../mobile_app_kunal_backend/gateway/sitesRoute.ts",
+    "../mobile_app_kunal_backend/gateway/ai.ts",
+    "../mobile_app_kunal_backend/gateway/explain.ts",
+    "../mobile_app_kunal_backend/gateway/advise.ts"
+  ]
+}

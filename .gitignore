@@ -1,0 +1,24 @@
+node_modules
+.next
+out
+.env*.local
+.DS_Store
+*.tsbuildinfo
+next-env.d.ts
+.claude/
+
+# Screens and demo archives the gateway build superseded. Its README calls
+# these safe to delete; they are .bak and .tgz, 2.4 MB of them, and a tarball
+# committed once stays in history forever.
+mobile_app_kunal_backend/_removed/
+
+# IDE. Android Studio writes .idea/ into whichever directory it opens, which
+# for this repo is android_app/android — but it has also landed in
+# mobile_app_kunal_backend/. Ignored anywhere rather than at one path, because
+# the next person to open a different folder would recreate the problem.
+.idea/
+*.iml
+.vscode/
+
+# Local history mirror (chunkStore.ts). Rebuildable from the gateway.
+.data/

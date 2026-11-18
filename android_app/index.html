@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>UnityESS</title>
+    <meta name="description" content="NorthBound EMS gateway — 1-second BESS telemetry" />
+
+    <!-- viewport-fit=cover lets the app paint into the display cutout and the
+         gesture-bar area; mobile.css pads with env(safe-area-inset-*). Scaling
+         is capped rather than locked so a pinch still works for accessibility,
+         which Play's own guidance expects. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=5, viewport-fit=cover"
+    />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#070B1A" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#EDF1F9" />
+
+    <!--
+      Theme, applied before first paint.
+
+      A copy of the inline script in app/layout.tsx, deliberately: useTheme
+      reads html.light rather than owning the value, so something has to have
+      set it by the time React mounts. Doing it in a module import instead
+      would run after the first frame and show a dark app flashing to light.
+
+      Same `ems-theme` key as the web app, so a user who switches surface does
+      not have to set the theme twice.
+    -->
+    <script>
+      try {
+        if (localStorage.getItem("ems-theme") === "light") {
+          document.documentElement.classList.add("light");
+        }
+      } catch (e) {
+        /* private mode — dark is the default and is a fine answer */
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">UnityESS</string>
+    <string name="title_activity_main">UnityESS</string>
+    <string name="package_name">com.ornatesolar.unityess</string>
+    <string name="custom_url_scheme">com.ornatesolar.unityess</string>
+</resources>

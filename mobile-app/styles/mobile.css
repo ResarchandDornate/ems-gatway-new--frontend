@@ -1,0 +1,1096 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   UnityESS Mobile — design system
+   ───────────────────────────────────────────────────────────────────────────
+   Generated from tokens/tokens.json (§7.2–§7.3 of the system design). Every
+   value here traces to that file; nothing is invented at the call site.
+
+   SCOPING. Everything is nested under `.m-root`. The web app has its own
+   mature token system in app/globals.css built on a different palette, and the
+   two must not meet: this sheet is imported only by the mobile layout, and
+   every custom property it defines is declared on `.m-root` rather than on
+   `:root`, so it cannot reach a single web route.
+
+   THEME. Follows the app's existing `html.light` switch so one toggle drives
+   both halves of the product. Light is designed independently, not inverted —
+   it shares layout, structure, spacing and hierarchy, and differs in surface,
+   shadow, glow, gradient and contrast.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.m-root {
+  /* ── Colour, dark ──────────────────────────────────────────────────────── */
+  --m-bg:             #060A18;
+  --m-bg-1:           #0A1230;
+  --m-bg-2:           #070C22;
+  --m-bg-3:           #04060E;
+  --m-ambient:        rgba(59, 130, 246, 0.20);
+  --m-surface:        rgba(18, 27, 56, 0.72);
+  --m-surface-el:     rgba(26, 38, 74, 0.82);
+  --m-glass:          rgba(255, 255, 255, 0.06);
+  --m-border:         rgba(255, 255, 255, 0.12);
+  --m-border-strong:  rgba(255, 255, 255, 0.20);
+  --m-primary:        #3B6FF6;
+  --m-primary-glow:   rgba(76, 130, 255, 0.45);
+  --m-cyan:           #7DD3FC;
+  --m-ink:            #F2F5FC;
+  --m-ink-2:          #A3B0CE;
+  --m-ink-3:          #66739A;
+  --m-good:           #2DD4A7;
+  --m-warn:           #F5A524;
+  --m-bad:            #FF5C72;
+  --m-dock-on:        #FFFFFF;
+  --m-dock-on-ink:    #0B1330;
+  --m-shadow:         rgba(0, 0, 0, 0.55);
+
+  /* The card interior. A one-stop vertical gradient rather than a flat fill —
+     it gives a large surface a top edge that catches the ambient light and a
+     base that settles into the page. This is most of what separates a
+     "floating surface" from a rectangle. */
+  --m-card-grad: linear-gradient(160deg, rgba(38, 52, 94, 0.78) 0%, rgba(18, 27, 56, 0.72) 58%, rgba(14, 21, 46, 0.74) 100%);
+  --m-glass-grad: linear-gradient(160deg, rgba(255, 255, 255, 0.10) 0%, rgba(255, 255, 255, 0.04) 100%);
+
+  /* Elevation. Three steps, used consistently: `flat` for a surface at rest,
+     `raised` for one being touched, `pop` for anything overlaying the page.
+     Dark leans on a near-black spread because a shadow only reads on this
+     ground if it is darker than the ground itself. */
+  --m-sh-flat:   0 1px 2px rgba(0,0,0,.30), 0 18px 40px -24px rgba(0,0,0,.85);
+  --m-sh-raised: 0 1px 2px rgba(0,0,0,.34), 0 26px 54px -26px rgba(0,0,0,.92);
+  --m-sh-pop:    0 24px 64px -16px rgba(0,0,0,.78);
+
+  /* The signature illumination. Blue is an ambient light source here, not a
+     button colour — it sits behind and around elements rather than on them. */
+  --m-lit:      linear-gradient(135deg, #3B6FF6 0%, #2C55D4 100%);
+  --m-lit-ink:  #FFFFFF;
+
+  /* ── Feature surface ─────────────────────────────────────────────────────
+     The deep-blue gradient card that carries a screen's headline reading. It
+     is the one saturated surface in the system: everything else is either the
+     ambient ground or a quiet card, so this is what the eye lands on first.
+     Its own ink scale is separate because white-on-blue needs different steps
+     than ink-on-paper. */
+  --m-feature:       linear-gradient(150deg, #0A2A5C 0%, #12488E 52%, #1E6BBE 100%);
+  --m-feature-ink:   #FFFFFF;
+  --m-feature-ink-2: rgba(255, 255, 255, 0.58);
+  --m-feature-glass: rgba(255, 255, 255, 0.12);
+  --m-feature-line:  rgba(255, 255, 255, 0.18);
+  --m-feature-glow:  0 22px 48px -20px rgba(30, 107, 190, 0.85);
+  --m-lit-soft: linear-gradient(135deg, rgba(59,111,246,.20) 0%, rgba(125,211,252,.08) 100%);
+  --m-lit-glow: 0 8px 28px -6px var(--m-primary-glow);
+
+  /* ── Geometry ──────────────────────────────────────────────────────────── */
+  --m-r-xs: 8px;  --m-r-sm: 12px;  --m-r-md: 18px;
+  --m-r-card: 24px;  --m-r-hero: 28px;  --m-r-pill: 999px;
+
+  /* ── Spacing ───────────────────────────────────────────────────────────── */
+  --m-s1: 4px;  --m-s2: 8px;   --m-s3: 12px;  --m-s4: 16px;
+  --m-s5: 20px; --m-s6: 24px;  --m-s7: 32px;  --m-s8: 44px;
+  --m-gutter: 20px;  --m-pad: 20px;
+  /* The dock floats over content; this keeps the last card clear of it. */
+  --m-bottom-inset: 96px;
+
+  /* ── Motion ────────────────────────────────────────────────────────────── */
+  --m-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --m-ease:   cubic-bezier(0.4, 0, 0.2, 1);
+
+  color-scheme: dark;
+  color: var(--m-ink);
+  font-family: var(--font-inter), Inter, system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* ── Colour, light ────────────────────────────────────────────────────────
+   Not an inversion. The page becomes the luminous ground and cards become
+   opaque white sitting on it, so depth now comes from shadow rather than from
+   a lighter surface. Glow is pulled right back: a halo on white reads as a
+   printing error rather than as energy. */
+html.light .m-root {
+  --m-bg:             #E8F0FB;
+  --m-bg-1:           #F4F8FE;
+  --m-bg-2:           #E4EEFA;
+  --m-bg-3:           #D6E5F6;
+  --m-ambient:        rgba(56, 124, 232, 0.20);
+  --m-surface:        rgba(255, 255, 255, 0.86);
+  --m-surface-el:     #FFFFFF;
+  --m-glass:          rgba(255, 255, 255, 0.62);
+  --m-border:         rgba(19, 38, 88, 0.09);
+  --m-border-strong:  rgba(19, 38, 88, 0.16);
+  --m-primary:        #16255E;
+  --m-primary-glow:   rgba(34, 55, 111, 0.28);
+  --m-cyan:           #2E7BE0;
+  --m-ink:            #0F1B3D;
+  --m-ink-2:          #56658C;
+  --m-ink-3:          #8C98B6;
+  --m-good:           #12A97B;
+  --m-warn:           #D68A0C;
+  --m-bad:            #E23D55;
+  --m-dock-on:        #16255E;
+  --m-dock-on-ink:    #FFFFFF;
+  --m-shadow:         rgba(19, 38, 88, 0.18);
+
+  --m-card-grad:  linear-gradient(160deg, #FFFFFF 0%, #FBFCFE 100%);
+  --m-glass-grad: linear-gradient(160deg, rgba(255,255,255,.78) 0%, rgba(255,255,255,.55) 100%);
+
+  --m-sh-flat:   0 1px 1px rgba(19,38,88,.04), 0 10px 26px -14px rgba(19,38,88,.22);
+  --m-sh-raised: 0 2px 4px rgba(19,38,88,.06), 0 18px 38px -16px rgba(19,38,88,.28);
+  --m-sh-pop:    0 20px 52px -12px rgba(19,38,88,.26);
+
+  --m-lit:      linear-gradient(135deg, #1D3378 0%, #16255E 100%);
+  --m-lit-ink:  #FFFFFF;
+
+  /* Light keeps the SAME feature gradient, only a touch brighter at the far
+     end. The saturated card is the constant across both themes — it is what
+     makes a screenshot recognisable as this product either way. */
+  --m-feature:       linear-gradient(150deg, #0B2F63 0%, #14498F 52%, #2C7AD1 100%);
+  --m-feature-ink:   #FFFFFF;
+  --m-feature-ink-2: rgba(255, 255, 255, 0.62);
+  --m-feature-glass: rgba(255, 255, 255, 0.14);
+  --m-feature-line:  rgba(255, 255, 255, 0.20);
+  --m-feature-glow:  0 20px 44px -18px rgba(20, 73, 143, 0.48);
+  --m-lit-soft: linear-gradient(135deg, rgba(59,130,246,.12) 0%, rgba(22,37,94,.05) 100%);
+  --m-lit-glow: 0 8px 24px -8px rgba(34,55,111,.34);
+
+  color-scheme: light;
+}
+
+/* ═══ Layer 1 — the background ══════════════════════════════════════════════
+   An environment, not a fill. Three radial pools of blue light over a vertical
+   gradient: one high-left behind the header, one mid-right, one low and wide.
+   They are what stop the page reading as flat black. */
+
+.m-app {
+  position: relative;
+  min-height: 100dvh;
+  background: var(--m-bg);
+  overflow-x: hidden;
+}
+
+.m-app::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 62% at 12% -6%,  var(--m-ambient) 0%, transparent 62%),
+    radial-gradient(88% 48% at 100% 26%,  var(--m-ambient) 0%, transparent 58%),
+    radial-gradient(140% 56% at 50% 108%, var(--m-ambient) 0%, transparent 66%),
+    linear-gradient(180deg, var(--m-bg-1) 0%, var(--m-bg-2) 46%, var(--m-bg-3) 100%);
+}
+
+/* A very faint grain over the gradient. Large flat gradients band on OLED
+   phones; a little noise breaks the banding without ever being visible as
+   texture. */
+.m-app::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: .022;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/></filter><rect width='140' height='140' filter='url(%23n)'/></svg>");
+}
+
+html.light .m-app::after { opacity: .030; }
+
+.m-content {
+  position: relative;
+  z-index: 1;
+  padding: 0 var(--m-gutter) var(--m-bottom-inset);
+  max-width: 520px;      /* tablets get the phone composition centred, not stretched */
+  margin: 0 auto;
+}
+
+/* ═══ Layer 2 — floating surfaces ═══════════════════════════════════════════ */
+
+.m-card {
+  position: relative;
+  border-radius: var(--m-r-card);
+  background: var(--m-card-grad);
+  border: 1px solid var(--m-border);
+  box-shadow: var(--m-sh-flat);
+  padding: var(--m-pad);
+  isolation: isolate;
+}
+
+/* A one-pixel light catch along the top edge — the whole trick behind a
+   surface looking lifted rather than drawn. It is the line where the card
+   turns to face the ambient light above it. Suppressed in light mode, where
+   the page is brighter than the card and a highlight there reads as a seam. */
+.m-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 1px;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.22) 22%, rgba(255,255,255,.28) 50%, rgba(255,255,255,.22) 78%, transparent);
+  pointer-events: none;
+}
+html.light .m-card::before { opacity: 0; }
+
+.m-card.is-glass {
+  background: var(--m-glass-grad);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+  backdrop-filter: blur(22px) saturate(160%);
+  border-color: var(--m-border-strong);
+}
+
+/* Selected / important surface: the ambient blue collects behind it. */
+.m-card.is-lit {
+  border-color: color-mix(in srgb, var(--m-primary) 42%, transparent);
+  box-shadow: var(--m-sh-flat), var(--m-lit-glow);
+}
+.m-card.is-lit::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--m-lit-soft);
+  pointer-events: none;
+}
+
+/* Pressable surfaces. Cards lift slightly under the thumb rather than
+   changing colour — depth is the feedback. */
+.m-pressable {
+  cursor: pointer;
+  transition: transform .16s var(--m-ease), box-shadow .16s var(--m-ease);
+  -webkit-tap-highlight-color: transparent;
+}
+.m-pressable:active {
+  transform: scale(.985);
+  box-shadow: var(--m-sh-raised);
+}
+
+/* ═══ Typography ════════════════════════════════════════════════════════════
+   Hierarchy carries the meaning: an eyebrow states the field, the value below
+   it is what the eye lands on. Sizes are the §7.3 ladder exactly. */
+
+.m-display  { font-size: 34px; font-weight: 600; letter-spacing: -.8px; line-height: 1.08; }
+.m-metric   { font-size: 30px; font-weight: 600; letter-spacing: -.8px; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.m-h1       { font-size: 26px; font-weight: 600; letter-spacing: -.5px; line-height: 1.15; }
+.m-h2       { font-size: 20px; font-weight: 600; letter-spacing: -.3px; line-height: 1.2; }
+.m-body     { font-size: 15px; font-weight: 400; letter-spacing: 0;     line-height: 1.5; }
+.m-label    { font-size: 13px; font-weight: 500; letter-spacing: .2px;  line-height: 1.35; }
+.m-eyebrow  {
+  font-size: 11px; font-weight: 600; letter-spacing: 1.2px;
+  text-transform: uppercase; color: var(--m-ink-3); line-height: 1.2;
+}
+
+.m-ink   { color: var(--m-ink); }
+.m-ink2  { color: var(--m-ink-2); }
+.m-ink3  { color: var(--m-ink-3); }
+.m-num   { font-variant-numeric: tabular-nums; }
+
+/* ═══ Layer 3 — interactive elements ════════════════════════════════════════ */
+
+.m-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 48px; padding: 0 22px;
+  border-radius: var(--m-r-pill);
+  font-size: 15px; font-weight: 600; letter-spacing: -.1px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform .14s var(--m-ease), box-shadow .14s var(--m-ease), opacity .14s var(--m-ease);
+}
+.m-btn:active:not(:disabled) { transform: scale(.97); }
+.m-btn:disabled { opacity: .42; cursor: not-allowed; }
+
+.m-btn-primary {
+  background: var(--m-lit);
+  color: var(--m-lit-ink);
+  box-shadow: var(--m-lit-glow);
+}
+.m-btn-primary:active:not(:disabled) { box-shadow: 0 4px 14px -4px var(--m-primary-glow); }
+
+.m-btn-secondary {
+  background: var(--m-glass);
+  color: var(--m-ink);
+  border-color: var(--m-border-strong);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
+
+.m-btn-ghost { background: transparent; color: var(--m-ink-2); }
+
+/* Icon button — 44pt minimum target per §7.8, regardless of glyph size. */
+.m-iconbtn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px;
+  border-radius: var(--m-r-pill);
+  background: var(--m-glass);
+  border: 1px solid var(--m-border);
+  color: var(--m-ink-2);
+  cursor: pointer;
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  -webkit-tap-highlight-color: transparent;
+  transition: transform .14s var(--m-ease), color .14s var(--m-ease), border-color .14s var(--m-ease);
+}
+.m-iconbtn:active { transform: scale(.94); }
+.m-iconbtn.is-on { color: var(--m-cyan); border-color: color-mix(in srgb, var(--m-cyan) 40%, transparent); }
+
+/* ═══ Floating dock ═════════════════════════════════════════════════════════
+   A pill inset from the bottom safe area, not a full-width bar. The active
+   item is a disc — light on dark ground, navy on light ground — which is the
+   single strongest carry-over from the reference. */
+
+.m-dock-wrap {
+  position: fixed;
+  left: 0; right: 0;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+  z-index: 40;
+  display: flex; justify-content: center;
+  padding: 0 var(--m-gutter);
+  pointer-events: none;
+}
+
+.m-dock {
+  pointer-events: auto;
+  display: flex; align-items: center; gap: 2px;
+  padding: 8px;
+  border-radius: var(--m-r-pill);
+  background: var(--m-glass-grad);
+  border: 1px solid var(--m-border-strong);
+  box-shadow: var(--m-sh-pop);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  backdrop-filter: blur(28px) saturate(180%);
+}
+
+.m-dock-item {
+  position: relative;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 3px;
+  width: 58px; height: 52px;
+  border-radius: var(--m-r-pill);
+  color: var(--m-ink-3);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: color .22s var(--m-ease);
+}
+
+.m-dock-item .m-dock-label {
+  font-size: 9.5px; font-weight: 600; letter-spacing: .3px;
+  opacity: .9;
+  transition: opacity .22s var(--m-ease);
+}
+
+/* The disc itself is a separate layer so it can translate between slots and
+   scale on arrival, rather than appearing instantly under the new icon. */
+.m-dock-disc {
+  position: absolute;
+  z-index: -1;
+  width: 46px; height: 46px;
+  border-radius: var(--m-r-pill);
+  background: var(--m-dock-on);
+  box-shadow: 0 6px 20px -4px var(--m-primary-glow), 0 0 0 1px rgba(255,255,255,.10) inset;
+  transition: transform .22s var(--m-spring);
+}
+
+.m-dock-item.is-on { color: var(--m-dock-on-ink); }
+.m-dock-item.is-on .m-dock-label { opacity: 1; }
+
+/* ═══ Status ════════════════════════════════════════════════════════════════
+   Never colour alone (§7.8) — every status carries a dot AND a word. */
+
+.m-status {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 5px 11px 5px 9px;
+  border-radius: var(--m-r-pill);
+  font-size: 12px; font-weight: 600; letter-spacing: .1px;
+  border: 1px solid var(--m-border);
+  background: var(--m-glass);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+.m-status-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+
+.m-status.is-good { color: var(--m-good); border-color: color-mix(in srgb, var(--m-good) 34%, transparent); }
+.m-status.is-good .m-status-dot { background: var(--m-good); box-shadow: 0 0 10px var(--m-good); }
+.m-status.is-warn { color: var(--m-warn); border-color: color-mix(in srgb, var(--m-warn) 34%, transparent); }
+.m-status.is-warn .m-status-dot { background: var(--m-warn); box-shadow: 0 0 10px var(--m-warn); }
+.m-status.is-bad  { color: var(--m-bad);  border-color: color-mix(in srgb, var(--m-bad) 34%, transparent); }
+.m-status.is-bad  .m-status-dot { background: var(--m-bad); box-shadow: 0 0 10px var(--m-bad); }
+.m-status.is-idle { color: var(--m-ink-3); }
+.m-status.is-idle .m-status-dot { background: var(--m-ink-3); }
+
+/* A live reading breathes; a stale one does not. */
+.m-pulse { animation: m-pulse 2.4s var(--m-ease) infinite; }
+@keyframes m-pulse {
+  0%, 100% { opacity: 1;   transform: scale(1); }
+  50%      { opacity: .45; transform: scale(1.35); }
+}
+
+/* ═══ Loading ═══════════════════════════════════════════════════════════════
+   Shimmer on the surface that is about to hold the value — never a spinner
+   (§7.6). The shape of the page is right before the data lands. */
+
+.m-shimmer {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--m-r-sm);
+  background: var(--m-glass);
+}
+.m-shimmer::after {
+  content: "";
+  position: absolute; inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.10) 50%, transparent);
+  animation: m-shimmer 1.5s infinite;
+}
+html.light .m-shimmer::after {
+  background: linear-gradient(90deg, transparent, rgba(19,38,88,.06) 50%, transparent);
+}
+@keyframes m-shimmer { 100% { transform: translateX(100%); } }
+
+/* ═══ Sheets and modals ═════════════════════════════════════════════════════ */
+
+.m-scrim {
+  position: fixed; inset: 0; z-index: 50;
+  background: rgba(3, 6, 16, .62);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  animation: m-fade .22s var(--m-ease);
+}
+html.light .m-scrim { background: rgba(19, 38, 88, .28); }
+
+.m-sheet {
+  position: fixed; z-index: 51;
+  left: 0; right: 0; bottom: 0;
+  max-height: 84dvh;
+  display: flex; flex-direction: column;
+  border-radius: var(--m-r-hero) var(--m-r-hero) 0 0;
+  background: var(--m-glass-grad);
+  border: 1px solid var(--m-border-strong);
+  border-bottom: 0;
+  box-shadow: var(--m-sh-pop);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  backdrop-filter: blur(30px) saturate(180%);
+  padding: 10px var(--m-gutter) calc(env(safe-area-inset-bottom, 0px) + 24px);
+  animation: m-sheet-up .3s var(--m-spring);
+}
+html.light .m-sheet { background: rgba(255,255,255,.94); }
+
+.m-sheet-grip {
+  width: 38px; height: 4px; border-radius: 999px;
+  background: var(--m-border-strong);
+  margin: 0 auto 14px;
+  flex: none;
+}
+
+.m-modal {
+  position: fixed; z-index: 51;
+  left: var(--m-gutter); right: var(--m-gutter);
+  top: 50%; transform: translateY(-50%);
+  max-width: 480px; margin: 0 auto;
+  border-radius: var(--m-r-hero);
+  background: var(--m-glass-grad);
+  border: 1px solid var(--m-border-strong);
+  box-shadow: var(--m-sh-pop);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  backdrop-filter: blur(30px) saturate(180%);
+  padding: var(--m-s6);
+  animation: m-pop .26s var(--m-spring);
+}
+html.light .m-modal { background: rgba(255,255,255,.96); }
+
+@keyframes m-fade    { from { opacity: 0; } }
+@keyframes m-sheet-up{ from { transform: translateY(100%); } }
+@keyframes m-pop     { from { opacity: 0; transform: translateY(-50%) scale(.95); } }
+
+/* ═══ Controls ══════════════════════════════════════════════════════════════ */
+
+.m-toggle {
+  position: relative;
+  width: 52px; height: 31px; flex: none;
+  border-radius: var(--m-r-pill);
+  background: var(--m-glass);
+  border: 1px solid var(--m-border-strong);
+  cursor: pointer; padding: 0;
+  -webkit-tap-highlight-color: transparent;
+  transition: background .22s var(--m-ease), border-color .22s var(--m-ease), box-shadow .22s var(--m-ease);
+}
+.m-toggle.is-on {
+  background: var(--m-lit);
+  border-color: transparent;
+  box-shadow: var(--m-lit-glow);
+}
+.m-toggle:disabled { opacity: .4; cursor: not-allowed; }
+.m-toggle-knob {
+  position: absolute; top: 2px; left: 2px;
+  width: 25px; height: 25px; border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(0,0,0,.32);
+  transition: transform .24s var(--m-spring);
+}
+.m-toggle.is-on .m-toggle-knob { transform: translateX(21px); }
+
+/* Segmented control — quiet by default, lit where selected. */
+.m-seg {
+  display: flex; gap: 2px; padding: 4px;
+  border-radius: var(--m-r-pill);
+  background: var(--m-glass);
+  border: 1px solid var(--m-border);
+}
+.m-seg-item {
+  /* min-width:0 is load-bearing: without it a flex item refuses to shrink
+     below its text width, and four labels ("Auto/Charge/Discharge/Standby")
+     push the last one past the card edge at 375 px. */
+  flex: 1 1 0; min-width: 0;
+  min-height: 36px; padding: 0 4px;
+  border: 0; border-radius: var(--m-r-pill);
+  background: transparent; color: var(--m-ink-3);
+  font-size: 11.5px; font-weight: 600; letter-spacing: -.1px; cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  -webkit-tap-highlight-color: transparent;
+  transition: background .2s var(--m-ease), color .2s var(--m-ease), box-shadow .2s var(--m-ease);
+}
+.m-seg-item.is-on {
+  background: var(--m-lit);
+  color: var(--m-lit-ink);
+  box-shadow: 0 4px 14px -6px var(--m-primary-glow);
+}
+
+/* List row inside a card. Dividers are hairlines, never full borders. */
+.m-row {
+  display: flex; align-items: center; gap: var(--m-s3);
+  min-height: 56px; padding: 10px 0;
+  border-bottom: 1px solid var(--m-border);
+  -webkit-tap-highlight-color: transparent;
+}
+.m-row:last-child { border-bottom: 0; }
+
+/* ═══ Accessibility ═════════════════════════════════════════════════════════ */
+
+.m-root :focus-visible {
+  outline: 2px solid var(--m-cyan);
+  outline-offset: 2px;
+  border-radius: var(--m-r-xs);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .m-root *, .m-root *::before, .m-root *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
+
+.m-sr {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+}
+
+/* ═══ Small primitives ══════════════════════════════════════════════════════ */
+
+.m-section-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px;
+  padding: 0 4px 10px;
+}
+
+/* The unit that trails a reading. Deliberately half the size of the number and
+   dimmed: the magnitude is the information, the unit is the footnote. */
+.m-unit {
+  font-size: .5em; font-weight: 500;
+  margin-left: .28em; opacity: .62;
+}
+
+.m-rupee {
+  font-size: .62em; font-weight: 500;
+  margin-right: .1em; opacity: .7;
+}
+
+.m-stack   { display: flex; flex-direction: column; }
+.m-hstack  { display: flex; align-items: center; }
+.m-spread  { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.m-grid2   { display: grid; grid-template-columns: 1fr 1fr; gap: var(--m-s3); }
+
+/* ═══ MetricCard ════════════════════════════════════════════════════════════ */
+
+.m-metric-card { padding: 16px 16px 14px; }
+.m-metric-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; margin-bottom: 10px;
+}
+.m-metric-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: 10px;
+  background: var(--m-lit-soft);
+  color: var(--m-cyan);
+  flex: none;
+}
+.m-metric-foot { margin-top: 6px; }
+
+/* ═══ ListItem ══════════════════════════════════════════════════════════════ */
+
+.m-row-tap {
+  width: 100%; background: transparent; border: 0;
+  border-bottom: 1px solid var(--m-border);
+  text-align: left; cursor: pointer; font: inherit; color: inherit;
+  transition: opacity .14s var(--m-ease);
+}
+.m-row-tap:last-child { border-bottom: 0; }
+.m-row-tap:active { opacity: .62; }
+
+.m-row-lead {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 38px; height: 38px; border-radius: 13px;
+  background: var(--m-lit-soft);
+  color: var(--m-cyan);
+  flex: none;
+}
+.m-row-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.m-row-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m-row-sub { font-size: 12px; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m-row-trail { flex: none; display: inline-flex; align-items: center; gap: 8px; }
+
+/* ═══ Header ════════════════════════════════════════════════════════════════
+   Sits above the content and scrolls with it. The station pill is the only
+   glass element up here; the rest is transparent so the ambient background
+   reads straight through, which is what gives the top of the screen its air. */
+
+.m-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: calc(env(safe-area-inset-top, 0px) + 14px) 0 18px;
+}
+
+.m-station-pill {
+  display: inline-flex; align-items: center; gap: 9px;
+  min-height: 44px; padding: 6px 14px 6px 10px;
+  border-radius: var(--m-r-pill);
+  background: var(--m-glass-grad);
+  border: 1px solid var(--m-border-strong);
+  -webkit-backdrop-filter: blur(20px) saturate(170%);
+  backdrop-filter: blur(20px) saturate(170%);
+  box-shadow: var(--m-sh-flat);
+  color: var(--m-ink);
+  cursor: pointer; flex: 1; min-width: 0;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform .14s var(--m-ease);
+}
+.m-station-pill:active { transform: scale(.985); }
+.m-station-pill .m-sp-mark {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; border-radius: 11px; flex: none;
+  background: var(--m-lit);
+  color: var(--m-lit-ink);
+  box-shadow: 0 4px 12px -3px var(--m-primary-glow);
+}
+.m-station-pill .m-sp-text { display: flex; flex-direction: column; min-width: 0; text-align: left; }
+.m-station-pill .m-sp-name {
+  font-size: 14px; font-weight: 600; letter-spacing: -.2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.m-station-pill .m-sp-loc {
+  font-size: 10.5px; color: var(--m-ink-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* ═══ Hero ══════════════════════════════════════════════════════════════════
+   The tallest surface on the screen and the only one that holds a 3D object.
+   Its glow sits *behind* the card, so the illumination looks like it comes
+   from the object rather than from the border. */
+
+.m-hero {
+  position: relative;
+  border-radius: var(--m-r-hero);
+  padding: 20px 20px 24px;
+  overflow: hidden;
+}
+.m-hero-canvas {
+  position: relative;
+  height: 210px;
+  margin: 4px -8px 6px;
+}
+.m-hero-readout {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 16px;
+}
+
+/* ═══ Chart frame ═══════════════════════════════════════════════════════════
+   Charts keep their own rendering; this only gives them a rounded, spacious
+   home so they sit inside the design system rather than on top of it. */
+
+.m-chart {
+  height: 172px;
+  margin: 4px -6px 0;
+}
+.m-chart-legend {
+  display: flex; align-items: center; gap: 16px;
+  padding: 12px 4px 0;
+}
+.m-legend-key {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 11.5px; font-weight: 500; color: var(--m-ink-3);
+}
+.m-legend-swatch { width: 10px; height: 3px; border-radius: 2px; flex: none; }
+
+/* ═══ Empty / stale states ══════════════════════════════════════════════════ */
+
+.m-empty {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 10px; padding: 30px 20px; text-align: center;
+}
+.m-empty-mark {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 46px; height: 46px; border-radius: 16px;
+  background: var(--m-glass);
+  border: 1px solid var(--m-border);
+  color: var(--m-ink-3);
+}
+
+.m-banner {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--m-r-md);
+  font-size: 12.5px; line-height: 1.45;
+  border: 1px solid;
+}
+.m-banner.is-warn {
+  color: var(--m-warn);
+  border-color: color-mix(in srgb, var(--m-warn) 30%, transparent);
+  background: color-mix(in srgb, var(--m-warn) 9%, transparent);
+}
+.m-banner.is-bad {
+  color: var(--m-bad);
+  border-color: color-mix(in srgb, var(--m-bad) 30%, transparent);
+  background: color-mix(in srgb, var(--m-bad) 9%, transparent);
+}
+
+/* ═══ Chart tooltip ═════════════════════════════════════════════════════════
+   Opaque, unlike every other floating surface in the app. A frosted tooltip
+   lets the plot lines show through the numbers it exists to state. */
+
+.m-tip {
+  border-radius: 14px;
+  padding: 10px 12px;
+  background: var(--m-surface-el);
+  border: 1px solid var(--m-border-strong);
+  box-shadow: var(--m-sh-pop);
+  min-width: 128px;
+}
+html.light .m-tip { background: #FFFFFF; }
+
+.m-tip-t {
+  font-size: 10.5px; font-weight: 600; letter-spacing: .6px;
+  text-transform: uppercase; color: var(--m-ink-3);
+  margin-bottom: 7px;
+}
+.m-tip-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 18px; font-size: 12px; color: var(--m-ink-2);
+  padding: 2px 0;
+}
+.m-tip-row strong {
+  color: var(--m-ink); font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Recharts paints a focus rectangle on the surface it owns; suppress it so the
+   card's own corners stay the only geometry visible. */
+.m-chart .recharts-surface { overflow: visible; }
+.m-chart .recharts-wrapper:focus,
+.m-chart .recharts-surface:focus { outline: none; }
+
+/* ═══ Range ═════════════════════════════════════════════════════════════════
+   The track is a thin lit bar; the thumb is a lifted disc with the ambient
+   glow under it. Both WebKit and Gecko need their own selectors, and neither
+   accepts a shared rule — hence the duplication. */
+
+.m-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 36px;               /* the touch target, not the visible track */
+  margin-top: 12px;
+  background: transparent;
+  cursor: pointer;
+}
+.m-range:disabled { opacity: .4; cursor: not-allowed; }
+
+.m-range::-webkit-slider-runnable-track {
+  height: 6px; border-radius: 999px;
+  background: var(--m-glass);
+  border: 1px solid var(--m-border);
+}
+.m-range::-moz-range-track {
+  height: 6px; border-radius: 999px;
+  background: var(--m-glass);
+  border: 1px solid var(--m-border);
+}
+
+.m-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 24px; height: 24px; margin-top: -10px;
+  border-radius: 50%;
+  background: #fff;
+  border: 0;
+  box-shadow: 0 2px 8px rgba(0,0,0,.34), 0 0 0 6px var(--m-primary-glow);
+  transition: transform .14s var(--m-ease);
+}
+.m-range::-moz-range-thumb {
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  background: #fff;
+  border: 0;
+  box-shadow: 0 2px 8px rgba(0,0,0,.34), 0 0 0 6px var(--m-primary-glow);
+}
+.m-range:active::-webkit-slider-thumb { transform: scale(1.12); }
+
+/* ═══ Prose list ════════════════════════════════════════════════════════════ */
+
+.m-list {
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 12px;
+}
+.m-list li {
+  position: relative;
+  padding-left: 18px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--m-ink-2);
+}
+.m-list li::before {
+  content: "";
+  position: absolute;
+  left: 2px; top: 8px;
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--m-cyan);
+  box-shadow: 0 0 8px var(--m-cyan);
+}
+.m-list li strong { color: var(--m-ink); font-weight: 600; }
+
+/* The station currently selected, in the picker sheet. */
+.is-current .m-row-title { color: var(--m-cyan); }
+
+/* ═══ Demo badge ════════════════════════════════════════════════════════════
+   Shown only under /m/demo. Amber rather than blue: it must read as a notice
+   about the data, not as part of the product's own accent language. */
+
+.m-demo-tag {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  margin: 0 calc(var(--m-gutter) * -1);
+  padding: calc(env(safe-area-inset-top, 0px) + 8px) 16px 8px;
+  font-size: 11px; font-weight: 600; letter-spacing: .9px; text-transform: uppercase;
+  color: var(--m-warn);
+  background: color-mix(in srgb, var(--m-warn) 12%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--m-warn) 26%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+  backdrop-filter: blur(18px) saturate(150%);
+}
+.m-demo-tag .m-demo-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--m-warn);
+  box-shadow: 0 0 8px var(--m-warn);
+  flex: none;
+}
+/* The header below it loses its own top safe-area padding — the badge has
+   already cleared the notch. */
+.m-demo-tag + .m-header { padding-top: 14px; }
+
+/* A row whose title carries the meaning — alarms, recommendations — gives the
+   text two lines rather than ellipsing it away. */
+.m-row.is-wrap { align-items: flex-start; padding: 14px 0; }
+.m-row.is-wrap .m-row-lead { margin-top: 1px; }
+.m-row.is-wrap .m-row-title {
+  white-space: normal;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  line-height: 1.32;
+}
+.m-row.is-wrap .m-row-sub { white-space: normal; }
+.m-row.is-wrap .m-row-trail { margin-top: 1px; }
+
+/* ═══ Feature surface ═══════════════════════════════════════════════════════
+   The saturated blue card that carries a screen's headline reading. One per
+   screen at most — a second one competes with the first and the hierarchy the
+   whole system depends on collapses. */
+
+.m-feature {
+  position: relative;
+  border-radius: var(--m-r-hero);
+  background: var(--m-feature);
+  border: 1px solid var(--m-feature-line);
+  box-shadow: var(--m-feature-glow);
+  padding: 20px;
+  overflow: hidden;
+  color: var(--m-feature-ink);
+  isolation: isolate;
+}
+
+/* A broad specular sweep across the top-left, which is what stops a large
+   saturated panel reading as flat vinyl. */
+.m-feature::before {
+  content: "";
+  position: absolute;
+  inset: -40% -30% auto -30%;
+  height: 78%;
+  z-index: -1;
+  background: radial-gradient(58% 100% at 26% 0%, rgba(255,255,255,.22) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.m-feature .m-eyebrow    { color: var(--m-feature-ink-2); }
+.m-feature .m-ink        { color: var(--m-feature-ink); }
+.m-feature .m-ink2,
+.m-feature .m-ink3       { color: var(--m-feature-ink-2); }
+
+/* ═══ Chips ═════════════════════════════════════════════════════════════════
+   Small pill badges that qualify the headline value — a delta, a rate, a
+   window. They sit directly under the number they describe. */
+
+.m-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--m-r-pill);
+  font-size: 12px; font-weight: 600; letter-spacing: -.1px;
+  white-space: nowrap;
+  background: var(--m-glass);
+  border: 1px solid var(--m-border);
+  color: var(--m-ink-2);
+}
+.m-feature .m-chip {
+  background: var(--m-feature-glass);
+  border-color: var(--m-feature-line);
+  color: var(--m-feature-ink);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+.m-chip.is-good { color: var(--m-good); border-color: color-mix(in srgb, var(--m-good) 34%, transparent); }
+.m-chip.is-warn { color: var(--m-warn); border-color: color-mix(in srgb, var(--m-warn) 34%, transparent); }
+.m-chip.is-bad  { color: var(--m-bad);  border-color: color-mix(in srgb, var(--m-bad) 34%, transparent); }
+.m-chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* ═══ Action pills ══════════════════════════════════════════════════════════
+   The row of quick actions inside a feature card: icon stacked over label, on
+   a translucent tile. Equal widths so the row reads as one control group. */
+
+.m-actions { display: flex; gap: 9px; margin-top: 18px; }
+.m-action {
+  flex: 1 1 0; min-width: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 6px;
+  min-height: 62px; padding: 10px 6px;
+  border-radius: 18px;
+  background: var(--m-feature-glass);
+  border: 1px solid var(--m-feature-line);
+  color: var(--m-feature-ink);
+  font-size: 11.5px; font-weight: 600; letter-spacing: -.1px;
+  cursor: pointer;
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  -webkit-tap-highlight-color: transparent;
+  transition: transform .14s var(--m-ease), background .14s var(--m-ease);
+}
+.m-action:active:not(:disabled) { transform: scale(.96); }
+.m-action:disabled { opacity: .45; cursor: not-allowed; }
+.m-action span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+
+/* ═══ Monogram ══════════════════════════════════════════════════════════════ */
+
+.m-mono {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 38px; height: 38px; border-radius: 50%;
+  flex: none;
+  font-size: 12px; font-weight: 700; letter-spacing: .3px;
+  background: var(--m-lit-soft);
+  border: 1px solid var(--m-border);
+  color: var(--m-cyan);
+}
+
+/* ═══ Tab card ══════════════════════════════════════════════════════════════
+   A card with a folder tab across its top-left, carrying the row's kind. The
+   tab is part of the same surface rather than a floating label, so the pair
+   reads as one object. */
+
+.m-tabcard { padding: 0; overflow: hidden; }
+.m-tabcard-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px;
+  background: var(--m-lit-soft);
+  border-bottom: 1px solid var(--m-border);
+  font-size: 12.5px; font-weight: 600;
+  color: var(--m-ink);
+}
+.m-tabcard-meta {
+  display: inline-flex; align-items: center; gap: 12px;
+  font-size: 11px; font-weight: 500; color: var(--m-ink-3);
+}
+.m-tabcard-meta span { display: inline-flex; align-items: center; gap: 5px; }
+.m-tabcard-body { padding: 16px 18px 18px; }
+
+/* ═══ Big readout ═══════════════════════════════════════════════════════════
+   The headline number. Decimals are set at 62% and dimmed so the magnitude
+   reads instantly and the precision stays available without competing. */
+
+.m-readout {
+  font-size: 44px; font-weight: 700; letter-spacing: -1.6px;
+  line-height: 1.02;
+  font-variant-numeric: tabular-nums;
+  display: inline-flex; align-items: baseline;
+}
+.m-readout .m-frac { font-size: .62em; font-weight: 600; opacity: .52; }
+.m-readout .m-unit { font-size: .40em; font-weight: 600; opacity: .68; margin-left: .22em; }
+
+@media (max-width: 359px) {
+  .m-readout { font-size: 38px; letter-spacing: -1.2px; }
+}
+
+/* ═══ Ring ══════════════════════════════════════════════════════════════════ */
+
+.m-ring { position: relative; margin: 0 auto; }
+.m-ring-center {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 2px;
+  text-align: center;
+  pointer-events: none;
+}
+.m-ring-caption {
+  font-size: 10.5px; font-weight: 600; letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--m-ink-3);
+}
+/* On the feature surface the ring inverts: white ink, white track. */
+.m-feature .m-ring-caption { color: var(--m-feature-ink-2); }
+.m-root { --m-ring-track: var(--m-glass); }
+.m-feature { --m-ring-track: var(--m-feature-glass); }
+.m-ring-legend {
+  display: flex; justify-content: center; flex-wrap: wrap;
+  gap: 8px; margin-top: 16px;
+}
+
+/* The ring's centre value is smaller than a hero readout — it sits inside a
+   190 px circle and has to clear the stroke on both sides. */
+.m-ring-value { font-size: 30px; letter-spacing: -1px; }
+
+/* Status on the feature surface. The tone colours are tuned for a dark or
+   paper ground and go muddy over saturated blue, so here the LABEL reverts to
+   white and only the dot carries the hue. Contrast is guaranteed, and status
+   is still not encoded by colour alone because the word is the label. */
+.m-feature .m-status {
+  background: var(--m-feature-glass);
+  border-color: var(--m-feature-line);
+  color: var(--m-feature-ink);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+.m-feature .m-status.is-good .m-status-dot { background: #4BE3B8; box-shadow: 0 0 10px #4BE3B8; }
+.m-feature .m-status.is-warn .m-status-dot { background: #FFC14D; box-shadow: 0 0 10px #FFC14D; }
+.m-feature .m-status.is-bad  .m-status-dot { background: #FF8095; box-shadow: 0 0 10px #FF8095; }
+.m-feature .m-status.is-idle .m-status-dot { background: rgba(255,255,255,.7); box-shadow: none; }

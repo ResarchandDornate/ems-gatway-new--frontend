@@ -1,0 +1,1034 @@
+From 0f04553c30d86a3fbea47191926a437314d55949 Mon Sep 17 00:00:00 2001
+From: Kedar Bala <kedar@ornatesolar.com>
+Date: Wed, 6 May 2026 08:15:35 +0000
+Subject: [PATCH] =?UTF-8?q?feat:=20make=20all=20device=20counts=20dynamic?=
+ =?UTF-8?q?=20=E2=80=94=20Groups=201,=202,=203?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Group 1 — Equipment view fully dynamic
+- types/index.ts: extract WaterChillerInfo; CabinetDetail.waterChiller -> waterChillers[]
+- equipment.mock.ts: water chiller, fire protection, PCS/BMS sub-device lists derived from mockHierarchy(); remove .slice(0,2) caps; meter count from grid count
+- EssCabinetView.tsx: loop over waterChillers[]; adaptive 0/1/N chiller layout; Cell tab bar chart implemented
+- SubDeviceView.tsx: availableTabs computed from non-empty fetch results; UPS tab removed
+- pcs.ts adapter: fetchCabinetDetailReal returns waterChillers: []
+
+Group 2 — Strategy service layer + dynamic data analysis points
+- lib/api/mock/strategy.mock.ts: new — mockAntiBackflowData, threshold scales with installedKw
+- lib/api/services/strategy.service.ts: new — IS_MOCK/apiFetch routing
+- hooks/useStrategy.ts: new — useAntiBackflow(stationId, date, meterId?)
+- StrategyManagement.tsx: remove inline mock fn; wire useAntiBackflow + useMeterData
+- dataAnalysis.mock.ts: replace static MOCK_POINTS with mockPointList(stationId) generating per-cabinet points from mockHierarchy()
+
+Group 3 — Curve report power scaling dynamic
+- curveReport.mock.ts: replace all hardcoded stationId chains with mockStationSummary(stationId).installedKw/.capacityKwh; mockPcsCurve scales to per-cabinet power
+- curveReport.service.ts + useCurveReport.ts + SingleCabinetPcs.tsx: thread stationId through fetchPcsCurve
+---
+ .../curve-report/views/SingleCabinetPcs.tsx   |   2 +-
+ .../equipment/views/EssCabinetView.tsx        | 156 +++++++++++++-----
+ .../modules/equipment/views/SubDeviceView.tsx |  48 ++++--
+ .../modules/strategy/StrategyManagement.tsx   | 135 ++++++++-------
+ hooks/useCurveReport.ts                       |   2 +-
+ hooks/useStrategy.ts                          |  12 ++
+ lib/api/adapters/pcs.ts                       |  13 +-
+ lib/api/mock/curveReport.mock.ts              |  22 ++-
+ lib/api/mock/dataAnalysis.mock.ts             |  57 ++++---
+ lib/api/mock/equipment.mock.ts                |  98 ++++++-----
+ lib/api/mock/strategy.mock.ts                 |  21 +++
+ lib/api/services/curveReport.service.ts       |   4 +-
+ lib/api/services/strategy.service.ts          |  19 +++
+ lib/api/types/index.ts                        |  22 +--
+ 14 files changed, 411 insertions(+), 200 deletions(-)
+ create mode 100644 hooks/useStrategy.ts
+ create mode 100644 lib/api/mock/strategy.mock.ts
+ create mode 100644 lib/api/services/strategy.service.ts
+
+diff --git a/components/modules/curve-report/views/SingleCabinetPcs.tsx b/components/modules/curve-report/views/SingleCabinetPcs.tsx
+index c10c470..ec2092a 100644
+--- a/components/modules/curve-report/views/SingleCabinetPcs.tsx
++++ b/components/modules/curve-report/views/SingleCabinetPcs.tsx
+@@ -54,7 +54,7 @@ export function SingleCabinetPcs({ stationId }: { stationId: string }) {
+   // Reset invN to 1 whenever cabinet changes
+   useEffect(() => { setInvN(1); }, [cabinetId]);
+ 
+-  const { data, isLoading } = usePcsCurve(cabinetId, searchDate, invN);
++  const { data, isLoading } = usePcsCurve(cabinetId, searchDate, invN, stationId);
+   const d = (data ?? []).filter((_,i)=>i%2===0);
+ 
+   return (
+diff --git a/components/modules/equipment/views/EssCabinetView.tsx b/components/modules/equipment/views/EssCabinetView.tsx
+index 3b5fbe3..f18f2d9 100644
+--- a/components/modules/equipment/views/EssCabinetView.tsx
++++ b/components/modules/equipment/views/EssCabinetView.tsx
+@@ -5,6 +5,9 @@ import { useCabinetDetail, usePcsData, useBmsData, useClusterData, useCellData }
+ import { LoadingState } from "@/components/shared/LoadingState";
+ import { ErrorState }   from "@/components/shared/ErrorState";
+ import type { Cabinet, Pile } from "@/lib/api/mock/equipment.mock";
++import {
++  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine,
++} from "recharts";
+ 
+ type EssTab = "ESS Cabinet" | "PCS" | "BMS" | "Battery Cluster" | "Cell";
+ const ESS_TABS: EssTab[] = ["ESS Cabinet", "PCS", "BMS", "Battery Cluster", "Cell"];
+@@ -45,16 +48,40 @@ function CommRow({ label, status }: { label: string; status: string }) {
+   );
+ }
+ 
++// ── Water Chiller card (reusable for 1 or N chillers) ─────────────────────────
++function WaterChillerCard({ w, title = "Water Chiller Info" }: {
++  w: { tmsStatus: string; outletTempC: number; inletTempC: number; ambientTempC: number; inletPressureBar: number; outletPressureBar: number; compressorSpeedRpm: number; pumpSpeedRpm: number };
++  title?: string;
++}) {
++  return (
++    <div>
++      <SectionBar title={title} />
++      <div className="grid grid-cols-3">
++        <KpiVal value={<span className="text-[14px]" style={{color:TEAL}}>{w.tmsStatus === "auto" ? "Auto Mode" : w.tmsStatus}</span>} unit="" label="TMS Status" />
++        <KpiVal value={w.outletTempC.toFixed(1)} unit="°c" label="Outlet Temp" />
++        <KpiVal value={w.inletTempC.toFixed(1)}  unit="°c" label="Inlet Temp" />
++        <KpiVal value={w.ambientTempC.toFixed(1)} unit="°c" label="Ambient Temp" />
++        <KpiVal value={w.inletPressureBar.toFixed(1)}  unit="bar" label="Inlet Pressure" />
++        <KpiVal value={w.outletPressureBar.toFixed(1)} unit="bar" label="Outlet Pressure" />
++        <KpiVal value={w.compressorSpeedRpm > 0 ? w.compressorSpeedRpm : 0} unit="rpm" label="Compressor Speed" />
++        <KpiVal value={w.pumpSpeedRpm > 0 ? w.pumpSpeedRpm : 0}             unit="rpm" label="Pump Speed" />
++      </div>
++    </div>
++  );
++}
++
+ // ── ESS Cabinet tab ────────────────────────────────────────────────────────────
+ function EssCabinetTab({ cabinetId, stationId }: { cabinetId: string; stationId: string }) {
+   const { data, isLoading, isError, refetch } = useCabinetDetail(cabinetId, stationId);
+   if (isLoading) return <div className="p-5"><LoadingState rows={4} /></div>;
+   if (isError || !data) return <ErrorState onRetry={() => refetch()} />;
+-  const c = data.commStatus, o = data.operationInfo, w = data.waterChiller;
++  const c = data.commStatus, o = data.operationInfo;
++  const chillers = data.waterChillers ?? [];
+ 
+   return (
+     <div className="surface-card overflow-hidden">
+-      <div className="grid grid-cols-3 divide-x divide-line/40">
++      {/* Top row: Comm Status | Operation Info | (first chiller or empty) */}
++      <div className={`grid divide-x divide-line/40 ${chillers.length > 0 ? "grid-cols-3" : "grid-cols-2"}`}>
+         {/* Comm Status */}
+         <div>
+           <SectionBar title="Comm Status" />
+@@ -74,21 +101,21 @@ function EssCabinetTab({ cabinetId, stationId }: { cabinetId: string; stationId:
+           </div>
+         </div>
+ 
+-        {/* Water Chiller Info */}
+-        <div>
+-          <SectionBar title="Water Chiller Info" />
+-          <div className="grid grid-cols-3">
+-            <KpiVal value={<span className="text-[14px]" style={{color:TEAL}}>{w.tmsStatus === "auto" ? "Auto Mode" : w.tmsStatus}</span>} unit="" label="TMS Status" />
+-            <KpiVal value={w.outletTempC.toFixed(1)} unit="°c" label="Outlet Temp" />
+-            <KpiVal value={w.inletTempC.toFixed(1)}  unit="°c" label="Inlet Temp" />
+-            <KpiVal value={w.ambientTempC.toFixed(1)} unit="°c" label="Ambient Temp" />
+-            <KpiVal value={w.inletPressureBar.toFixed(1)}  unit="bar" label="Inlet Pressure" />
+-            <KpiVal value={w.outletPressureBar.toFixed(1)} unit="bar" label="Outlet Pressure" />
+-            <KpiVal value={w.compressorSpeedRpm > 0 ? w.compressorSpeedRpm : 0} unit="rmp" label="Compressor Speed" />
+-            <KpiVal value={w.pumpSpeedRpm > 0 ? w.pumpSpeedRpm : 0}             unit="rmp" label="Pump Speed" />
+-          </div>
+-        </div>
++        {/* First Water Chiller (if any) */}
++        {chillers.length > 0 && (
++          <WaterChillerCard
++            w={chillers[0]}
++            title={chillers.length > 1 ? "Water Chiller 1" : "Water Chiller Info"}
++          />
++        )}
+       </div>
++
++      {/* Additional chillers (index 1+) — each gets its own full-width row */}
++      {chillers.slice(1).map((w, i) => (
++        <div key={i + 1} className="border-t border-line/40">
++          <WaterChillerCard w={w} title={`Water Chiller ${i + 2}`} />
++        </div>
++      ))}
+     </div>
+   );
+ }
+@@ -347,33 +374,80 @@ function CellTab({ pile, stationId }: { pile: Pile; stationId: string }) {
+         </div>
+       </div>
+ 
+-      {/* Table */}
+-      <div className="overflow-x-auto">
+-        <table className="w-full text-[12.5px]">
+-          <thead>
+-            <tr className="border-b border-line bg-surface2/40">
+-              {["Cell Num","Voltage/mV","SOC/%","SOH/%"].map(h=>(
+-                <th key={h} className="text-left py-3 px-5 text-[11px] text-ink3 font-medium">{h}</th>
+-              ))}
+-            </tr>
+-          </thead>
+-          <tbody>
+-            {pageData.map((cell, i) => (
+-              <tr key={cell.cellId} className="border-b border-line/40 last:border-none hover:bg-surface2/30 transition-colors">
+-                <td className="py-3 px-5 text-ink2">{(page-1)*pageSize + i + 1}</td>
+-                <td className="py-3 px-5 font-mono tabular-nums text-ink2">{cell.voltMv}</td>
+-                <td className="py-3 px-5 font-mono tabular-nums text-ink2">{cell.socPct}</td>
+-                <td className="py-3 px-5 font-mono tabular-nums text-muted">--</td>
++      {/* Table view */}
++      {viewMode === "table" && (
++        <div className="overflow-x-auto">
++          <table className="w-full text-[12.5px]">
++            <thead>
++              <tr className="border-b border-line bg-surface2/40">
++                {["Cell Num","Voltage/mV","SOC/%","SOH/%"].map(h=>(
++                  <th key={h} className="text-left py-3 px-5 text-[11px] text-ink3 font-medium">{h}</th>
++                ))}
+               </tr>
+-            ))}
+-          </tbody>
+-        </table>
+-      </div>
++            </thead>
++            <tbody>
++              {pageData.map((cell, i) => (
++                <tr key={cell.cellId} className="border-b border-line/40 last:border-none hover:bg-surface2/30 transition-colors">
++                  <td className="py-3 px-5 text-ink2">{(page-1)*pageSize + i + 1}</td>
++                  <td className="py-3 px-5 font-mono tabular-nums text-ink2">{cell.voltMv}</td>
++                  <td className="py-3 px-5 font-mono tabular-nums text-ink2">{cell.socPct}</td>
++                  <td className="py-3 px-5 font-mono tabular-nums text-muted">--</td>
++                </tr>
++              ))}
++            </tbody>
++          </table>
++        </div>
++      )}
+ 
+-      {/* Pagination footer */}
+-      <div className="px-4 py-3 border-t border-line flex items-center gap-3 flex-wrap">
++      {/* Bar chart view */}
++      {viewMode === "bar" && (() => {
++        const chartData = data.map((cell, i) => ({
++          name: `${i + 1}`,
++          voltage: cell.voltMv,
++          soc:     cell.socPct,
++        }));
++        const voltages = data.map(c => c.voltMv);
++        const avgVolt  = Math.round(voltages.reduce((s, v) => s + v, 0) / voltages.length);
++        const ax = { tickLine: false, axisLine: false, tick: { fill: "#6B7280", fontSize: 10 } };
++        const LINE = "#1B2129";
++        const tooltipStyle = { background: "rgba(12,16,21,.96)", border: "1px solid #262C36", borderRadius: 8, fontSize: 11, color: "#F4F6F8", padding: "8px 10px" };
++        return (
++          <div className="p-4 flex flex-col gap-6">
++            {/* Voltage chart */}
++            <div>
++              <p className="text-[11px] font-mono uppercase tracking-[1.2px] text-muted font-semibold mb-3">Cell Voltage (mV)</p>
++              <ResponsiveContainer width="100%" height={200}>
++                <BarChart data={chartData} margin={{ top: 4, right: 4, left: -10, bottom: 0 }} barSize={total > 32 ? 6 : 12}>
++                  <CartesianGrid strokeDasharray="3 3" stroke={LINE} vertical={false} />
++                  <XAxis dataKey="name" {...ax} label={{ value: "Cell #", position: "insideBottom", offset: -2, fill: "#6B7280", fontSize: 10 }} />
++                  <YAxis {...ax} domain={["auto", "auto"]} tickFormatter={v => `${v}`} />
++                  <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => [`${v} mV`, "Voltage"]} />
++                  <ReferenceLine y={avgVolt} stroke="#F26B4E" strokeDasharray="4 3" strokeWidth={1.5} label={{ value: `Avg ${avgVolt}`, fill: "#F26B4E", fontSize: 10, position: "right" }} />
++                  <Bar dataKey="voltage" name="Voltage (mV)" fill="#34D2C5" radius={[2, 2, 0, 0]} />
++                </BarChart>
++              </ResponsiveContainer>
++            </div>
++            {/* SOC chart */}
++            <div>
++              <p className="text-[11px] font-mono uppercase tracking-[1.2px] text-muted font-semibold mb-3">Cell SOC (%)</p>
++              <ResponsiveContainer width="100%" height={200}>
++                <BarChart data={chartData} margin={{ top: 4, right: 4, left: -10, bottom: 0 }} barSize={total > 32 ? 6 : 12}>
++                  <CartesianGrid strokeDasharray="3 3" stroke={LINE} vertical={false} />
++                  <XAxis dataKey="name" {...ax} label={{ value: "Cell #", position: "insideBottom", offset: -2, fill: "#6B7280", fontSize: 10 }} />
++                  <YAxis {...ax} domain={[0, 100]} tickFormatter={v => `${v}%`} />
++                  <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => [`${v}%`, "SOC"]} />
++                  <Bar dataKey="soc" name="SOC (%)" fill="#F26B4E" radius={[2, 2, 0, 0]} />
++                </BarChart>
++              </ResponsiveContainer>
++            </div>
++          </div>
++        );
++      })()}
++
++      {/* Pagination footer — table mode only */}
++      {viewMode === "table" && <div className="px-4 py-3 border-t border-line flex items-center gap-3 flex-wrap">
+         <span className="text-[12px] text-muted mr-auto">Total {total} items</span>
+-        <select value={pageSize} className="h-7 px-2 bg-surface border border-line rounded text-[11.5px] text-ink2 outline-none">
++        <select value={pageSize} onChange={() => {}} className="h-7 px-2 bg-surface border border-line rounded text-[11.5px] text-ink2 outline-none">
+           <option value={10}>10 / page</option>
+         </select>
+         <div className="flex items-center gap-0.5">
+@@ -393,7 +467,7 @@ function CellTab({ pile, stationId }: { pile: Pile; stationId: string }) {
+           <button onClick={() => setPage(p=>Math.min(pages,p+1))} disabled={page>=pages}
+             className="w-7 h-7 grid place-items-center rounded hover:bg-surface2 text-ink3 disabled:opacity-30 text-[12px]">›</button>
+         </div>
+-      </div>
++      </div>}
+     </div>
+   );
+ }
+diff --git a/components/modules/equipment/views/SubDeviceView.tsx b/components/modules/equipment/views/SubDeviceView.tsx
+index 9825502..e572f9c 100644
+--- a/components/modules/equipment/views/SubDeviceView.tsx
++++ b/components/modules/equipment/views/SubDeviceView.tsx
+@@ -6,8 +6,7 @@ import { LoadingState } from "@/components/shared/LoadingState";
+ import { ErrorState }   from "@/components/shared/ErrorState";
+ import { EmptyState }   from "@/components/shared/EmptyState";
+ 
+-type SubTab = "PCS" | "BMS" | "Water Chiller" | "Fire Protection" | "UPS";
+-const SUB_TABS: SubTab[] = ["PCS", "BMS", "Water Chiller", "Fire Protection", "UPS"];
++type SubTab = "PCS" | "BMS" | "Water Chiller" | "Fire Protection";
+ 
+ function StatusChip({ status }: { status: "normal" | "abnormal" }) {
+   return (
+@@ -330,19 +329,47 @@ function FireProtectionTab({ stationId }: { stationId: string }) {
+ 
+ // ── Main ──────────────────────────────────────────────────────────────────────
+ export function SubDeviceView({ stationId }: { stationId: string }) {
+-  const [activeTab, setActiveTab] = useState<SubTab>("Water Chiller");
++  // Pre-fetch all sub-device lists to decide which tabs to show.
++  // These share the same React Query cache keys as the inner tab components,
++  // so there is no double network call.
++  const pcs          = usePcsSubDeviceList(stationId);
++  const bms          = useBmsSubDeviceList(stationId);
++  const waterChiller = useWaterChiller(stationId);
++  const fireProt     = useFireProtection(stationId);
++
++  const ALL_TABS: { key: SubTab; hasData: boolean }[] = [
++    { key: "PCS",             hasData: (pcs.data?.length          ?? 0) > 0 },
++    { key: "BMS",             hasData: (bms.data?.length          ?? 0) > 0 },
++    { key: "Water Chiller",   hasData: (waterChiller.data?.length ?? 0) > 0 },
++    { key: "Fire Protection", hasData: (fireProt.data?.length     ?? 0) > 0 },
++  ];
++
++  const isAnyLoading = pcs.isLoading || bms.isLoading || waterChiller.isLoading || fireProt.isLoading;
++  const availableTabs: SubTab[] = ALL_TABS.filter(t => t.hasData).map(t => t.key);
++
++  const [activeTab, setActiveTab] = useState<SubTab | null>(null);
++  // Resolve active tab: use stored value if still available, else first available tab
++  const resolvedTab: SubTab | null = activeTab && availableTabs.includes(activeTab)
++    ? activeTab
++    : (availableTabs[0] ?? null);
++
++  if (isAnyLoading) return <LoadingState rows={4} />;
++
++  if (availableTabs.length === 0) {
++    return <EmptyState title="No Sub-Devices Found" description="No PCS, BMS, Water Chiller, or Fire Protection devices are configured for this station." />;
++  }
+ 
+   return (
+     <div className="flex flex-col gap-4">
+-      {/* Tab bar */}
++      {/* Tab bar — only renders tabs that have real data */}
+       <div className="surface-card p-1 flex items-center gap-1 w-fit">
+-        {SUB_TABS.map(t => (
++        {availableTabs.map(t => (
+           <button
+             key={t}
+             onClick={() => setActiveTab(t)}
+             className={[
+               "px-4 py-2 rounded-lg text-[12.5px] font-medium transition-all",
+-              activeTab === t
++              resolvedTab === t
+                 ? "bg-orange-400/15 text-orange-300 ring-1 ring-orange-400/25"
+                 : "text-ink3 hover:text-ink hover:bg-surface2",
+             ].join(" ")}
+@@ -353,11 +380,10 @@ export function SubDeviceView({ stationId }: { stationId: string }) {
+       </div>
+ 
+       {/* Tab content */}
+-      {activeTab === "Water Chiller"   && <WaterChillerTab   stationId={stationId} />}
+-      {activeTab === "Fire Protection" && <FireProtectionTab stationId={stationId} />}
+-      {activeTab === "PCS" && <PcsTab stationId={stationId} />}
+-      {activeTab === "BMS" && <BmsTab stationId={stationId} />}
+-      {activeTab === "UPS" && <EmptyState title="No UPS Data For This Power Station" description="There Is No UPS Data For This Power Station." />}
++      {resolvedTab === "Water Chiller"   && <WaterChillerTab   stationId={stationId} />}
++      {resolvedTab === "Fire Protection" && <FireProtectionTab stationId={stationId} />}
++      {resolvedTab === "PCS"             && <PcsTab            stationId={stationId} />}
++      {resolvedTab === "BMS"             && <BmsTab            stationId={stationId} />}
+     </div>
+   );
+ }
+diff --git a/components/modules/strategy/StrategyManagement.tsx b/components/modules/strategy/StrategyManagement.tsx
+index dce42be..7bb29bb 100644
+--- a/components/modules/strategy/StrategyManagement.tsx
++++ b/components/modules/strategy/StrategyManagement.tsx
+@@ -3,71 +3,86 @@
+ import { useState } from "react";
+ import { BarChart3, Table2, Search, Download, RotateCcw } from "lucide-react";
+ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
++import { useAntiBackflow } from "@/hooks/useStrategy";
++import { useMeterData }    from "@/hooks/useEquipment";
++import { LoadingState }    from "@/components/shared/LoadingState";
++import { ErrorState }      from "@/components/shared/ErrorState";
+ 
+-type NavKey = "demand" | "antibackflow";
+-type ViewMode = "chart" | "table";
+-
+-// ── Mock anti-backflow data ────────────────────────────────────────────────────
+-function mockAntiBackflow(date: string) {
+-  const pts = [];
+-  for (let h = 0; h < 24; h++) {
+-    for (let m = 0; m < 60; m += 30) {
+-      const t = `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
+-      const gridPower   = h >= 8 && h < 22 ? 120 + Math.sin(h/3)*40 : 20;
+-      const battPower   = h >= 10 && h < 15 ? -80 : h >= 18 && h < 21 ? 100 : 0;
+-      pts.push({ t, gridPower: Math.round(gridPower*10)/10, battPower: Math.round(battPower*10)/10, threshold: 150 });
+-    }
+-  }
+-  return pts;
+-}
++type NavKey   = "demand" | "antibackflow";
++type ViewMode = "chart"  | "table";
+ 
+ const ORANGE = "#F26B4E", TEAL = "#34D2C5", BLUE = "#5B8DEF", LINE = "#1B2129";
+-const tooltipStyle = { background:"rgba(12,16,21,.96)",border:"1px solid #262C36",borderRadius:8,fontSize:11,color:"#F4F6F8",padding:"8px 10px" };
+-const ax = { tickLine:false, axisLine:false, tick:{ fill:"#6B7280", fontSize:10 } };
++const tooltipStyle = { background: "rgba(12,16,21,.96)", border: "1px solid #262C36", borderRadius: 8, fontSize: 11, color: "#F4F6F8", padding: "8px 10px" };
++const ax = { tickLine: false, axisLine: false, tick: { fill: "#6B7280", fontSize: 10 } };
+ 
+ // ── Anti-backflow view ─────────────────────────────────────────────────────────
+ function AntiBackflowView({ stationId }: { stationId: string }) {
+-  const today = new Date().toISOString().slice(0,10);
++  const today = new Date().toISOString().slice(0, 10);
+   const [date,       setDate]       = useState(today);
+   const [searchDate, setSearchDate] = useState(today);
+-  const [meterSel,   setMeterSel]   = useState("");
++  const [meterId,    setMeterId]    = useState("");
+   const [viewMode,   setViewMode]   = useState<ViewMode>("chart");
+   const [searched,   setSearched]   = useState(false);
+ 
+-  const data = mockAntiBackflow(searchDate);
++  // Meter list from the same API used everywhere else
++  const meters = useMeterData(stationId);
++
++  // Anti-backflow data — only fetched after user clicks Search
++  const { data, isLoading, isError, refetch } = useAntiBackflow(
++    stationId,
++    searchDate,
++    meterId || undefined
++  );
+ 
+   function handleSearch() { setSearchDate(date); setSearched(true); }
+-  function handleReset()  { setDate(today); setSearchDate(today); setMeterSel(""); setSearched(false); }
++  function handleReset()  {
++    setDate(today); setSearchDate(today); setMeterId(""); setSearched(false);
++  }
+ 
+   return (
+     <div className="flex flex-col gap-4">
+       {/* Controls */}
+       <div className="surface-card p-4 flex items-center gap-3 flex-wrap">
+         <span className="text-[11.5px] text-ink3 flex-shrink-0">Time Select:</span>
+-        <input type="date" value={date} onChange={e => setDate(e.target.value)} className="filter-input h-8 text-[11.5px] w-[140px]" />
++        <input
++          type="date"
++          value={date}
++          onChange={e => setDate(e.target.value)}
++          className="filter-input h-8 text-[11.5px] w-[140px]"
++        />
+ 
+         <span className="text-[11.5px] text-ink3 flex-shrink-0 ml-2">Meter Select:</span>
+-        <select value={meterSel} onChange={e => setMeterSel(e.target.value)} className="filter-input h-8 text-[11.5px] w-[160px]">
+-          <option value="">Select Meter</option>
+-          <option value="em-001">Main Grid Meter</option>
+-          <option value="em-002">PV Meter</option>
++        <select
++          value={meterId}
++          onChange={e => setMeterId(e.target.value)}
++          className="filter-input h-8 text-[11.5px] w-[180px]"
++          disabled={meters.isLoading}
++        >
++          <option value="">All Meters</option>
++          {(meters.data ?? []).map(m => (
++            <option key={m.meterId} value={m.meterId}>{m.meterName}</option>
++          ))}
+         </select>
+ 
+-        <button onClick={handleReset}  className="btn-outline"><RotateCcw size={12}/>Reset</button>
+-        <button onClick={handleSearch} className="btn-primary"><Search size={12}/>Search</button>
+-        <button className="btn-outline"><Download size={12}/>Export</button>
++        <button onClick={handleReset}  className="btn-outline"><RotateCcw size={12} />Reset</button>
++        <button onClick={handleSearch} className="btn-primary"><Search    size={12} />Search</button>
++        <button className="btn-outline"><Download size={12} />Export</button>
+ 
+-        {/* Chart / Table toggle — right aligned */}
++        {/* Chart / Table toggle */}
+         <div className="ml-auto flex items-center gap-0.5 bg-surface/80 ring-1 ring-line rounded-md p-0.5">
+-          <button onClick={() => setViewMode("chart")}
++          <button
++            onClick={() => setViewMode("chart")}
+             className={["flex items-center gap-1.5 px-3 py-1.5 rounded text-[12px] font-medium transition-colors",
+-              viewMode==="chart" ? "bg-orange-400/15 text-orange-300 ring-1 ring-orange-400/20" : "text-muted hover:text-ink"].join(" ")}>
+-            <BarChart3 size={13}/> Chart
++              viewMode === "chart" ? "bg-orange-400/15 text-orange-300 ring-1 ring-orange-400/20" : "text-muted hover:text-ink"].join(" ")}
++          >
++            <BarChart3 size={13} /> Chart
+           </button>
+-          <button onClick={() => setViewMode("table")}
++          <button
++            onClick={() => setViewMode("table")}
+             className={["flex items-center gap-1.5 px-3 py-1.5 rounded text-[12px] font-medium transition-colors",
+-              viewMode==="table" ? "bg-orange-400/15 text-orange-300 ring-1 ring-orange-400/20" : "text-muted hover:text-ink"].join(" ")}>
+-            <Table2 size={13}/> Table
++              viewMode === "table" ? "bg-orange-400/15 text-orange-300 ring-1 ring-orange-400/20" : "text-muted hover:text-ink"].join(" ")}
++          >
++            <Table2 size={13} /> Table
+           </button>
+         </div>
+       </div>
+@@ -75,11 +90,14 @@ function AntiBackflowView({ stationId }: { stationId: string }) {
+       {/* Content */}
+       <div className="surface-card flex-1 overflow-hidden">
+         {!searched ? (
+-          /* Pre-search empty state */
+           <div className="flex flex-col items-center justify-center py-24 gap-4">
+             <div className="w-16 h-16 rounded-2xl bg-surface2 border border-line grid place-items-center text-3xl">📦</div>
+-            <p className="text-[13px] text-muted">There Is No Data For This Date</p>
++            <p className="text-[13px] text-muted">Select a date and click Search</p>
+           </div>
++        ) : isLoading ? (
++          <div className="p-5"><LoadingState rows={5} /></div>
++        ) : isError || !data ? (
++          <ErrorState onRetry={() => refetch()} />
+         ) : viewMode === "chart" ? (
+           <div className="p-5">
+             <div className="flex items-center gap-2 mb-4">
+@@ -87,35 +105,34 @@ function AntiBackflowView({ stationId }: { stationId: string }) {
+               <h3 className="text-[13px] font-semibold text-ink">Anti-backflow Strategy · {searchDate}</h3>
+             </div>
+             <ResponsiveContainer width="100%" height={340}>
+-              <LineChart data={data} margin={{top:4,right:4,left:-20,bottom:0}}>
+-                <CartesianGrid strokeDasharray="3 3" stroke={LINE} vertical={false}/>
+-                <XAxis dataKey="t" {...ax} interval={3}/>
+-                <YAxis {...ax} tickFormatter={v=>`${v}kW`}/>
+-                <Tooltip contentStyle={tooltipStyle} formatter={(v:number)=>[`${v} kW`]}/>
+-                <Legend wrapperStyle={{fontSize:10.5,paddingTop:8}} iconType="line" iconSize={16}/>
+-                <Line type="linear" dataKey="gridPower"  name="Grid Power (kW)"    stroke={ORANGE} strokeWidth={2} dot={false}/>
+-                <Line type="linear" dataKey="battPower"  name="Battery Power (kW)" stroke={TEAL}   strokeWidth={2} dot={false}/>
+-                <Line type="linear" dataKey="threshold"  name="Threshold (kW)"     stroke={BLUE}   strokeWidth={1.5} dot={false} strokeDasharray="5 3"/>
++              <LineChart data={data} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
++                <CartesianGrid strokeDasharray="3 3" stroke={LINE} vertical={false} />
++                <XAxis dataKey="t" {...ax} interval={3} />
++                <YAxis {...ax} tickFormatter={v => `${v}kW`} />
++                <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => [`${v} kW`]} />
++                <Legend wrapperStyle={{ fontSize: 10.5, paddingTop: 8 }} iconType="line" iconSize={16} />
++                <Line type="linear" dataKey="gridPowerKw"    name="Grid Power (kW)"    stroke={ORANGE} strokeWidth={2}   dot={false} />
++                <Line type="linear" dataKey="batteryPowerKw" name="Battery Power (kW)" stroke={TEAL}   strokeWidth={2}   dot={false} />
++                <Line type="linear" dataKey="threshold"      name="Threshold (kW)"     stroke={BLUE}   strokeWidth={1.5} dot={false} strokeDasharray="5 3" />
+               </LineChart>
+             </ResponsiveContainer>
+           </div>
+         ) : (
+-          /* Table view */
+           <div className="overflow-x-auto">
+             <table className="w-full text-[12.5px]">
+               <thead>
+                 <tr className="border-b border-line bg-surface2/40">
+-                  {["Time","Grid Power (kW)","Battery Power (kW)","Threshold (kW)"].map(h=>(
++                  {["Time", "Grid Power (kW)", "Battery Power (kW)", "Threshold (kW)"].map(h => (
+                     <th key={h} className="text-left py-3 px-4 text-[10px] font-mono uppercase tracking-[1.2px] text-muted font-semibold">{h}</th>
+                   ))}
+                 </tr>
+               </thead>
+               <tbody>
+-                {data.map((row,i)=>(
+-                  <tr key={row.t} className={`border-b border-line/40 last:border-none ${i%2===0?"bg-surface2/15":""}`}>
++                {data.map((row, i) => (
++                  <tr key={row.t} className={`border-b border-line/40 last:border-none ${i % 2 === 0 ? "bg-surface2/15" : ""}`}>
+                     <td className="py-2.5 px-4 font-mono text-ink3">{row.t}</td>
+-                    <td className="py-2.5 px-4 font-mono tabular-nums text-ink2">{row.gridPower.toFixed(1)}</td>
+-                    <td className="py-2.5 px-4 font-mono tabular-nums text-ink2">{row.battPower.toFixed(1)}</td>
++                    <td className="py-2.5 px-4 font-mono tabular-nums text-ink2">{row.gridPowerKw.toFixed(1)}</td>
++                    <td className="py-2.5 px-4 font-mono tabular-nums text-ink2">{row.batteryPowerKw.toFixed(1)}</td>
+                     <td className="py-2.5 px-4 font-mono tabular-nums text-muted">{row.threshold}</td>
+                   </tr>
+                 ))}
+@@ -135,17 +152,17 @@ export function StrategyManagement({ stationId }: { stationId: string }) {
+   return (
+     <div className="flex gap-4" style={{ minHeight: "calc(100vh - 180px)" }}>
+ 
+-      {/* ── Sidebar ──────────────────────────────────────────────────── */}
++      {/* Sidebar */}
+       <div className="w-[188px] flex-shrink-0 surface-card h-fit py-2">
+         {([
+-          { key: "demand",      label: "Demand Management"    },
+-          { key: "antibackflow",label: "Anti – backflow Strategy" },
++          { key: "demand",       label: "Demand Management"       },
++          { key: "antibackflow", label: "Anti – backflow Strategy" },
+         ] as { key: NavKey; label: string }[]).map(item => (
+           <button
+             key={item.key}
+             onClick={() => setActiveNav(item.key)}
+             className={["w-full text-left px-4 py-2.5 text-[12px] font-medium transition-colors rounded-lg truncate",
+-              activeNav === item.key ? "bg-orange-400/10 text-orange-300" : "text-ink3 hover:bg-surface2 hover:text-ink"
++              activeNav === item.key ? "bg-orange-400/10 text-orange-300" : "text-ink3 hover:bg-surface2 hover:text-ink",
+             ].join(" ")}
+             title={item.label}
+           >
+@@ -154,7 +171,7 @@ export function StrategyManagement({ stationId }: { stationId: string }) {
+         ))}
+       </div>
+ 
+-      {/* ── Content ──────────────────────────────────────────────────── */}
++      {/* Content */}
+       <div className="flex-1 min-w-0">
+         {activeNav === "demand" ? (
+           <div className="surface-card flex flex-col items-center justify-center" style={{ minHeight: "400px" }}>
+diff --git a/hooks/useCurveReport.ts b/hooks/useCurveReport.ts
+index 71582c9..0065d78 100644
+--- a/hooks/useCurveReport.ts
++++ b/hooks/useCurveReport.ts
+@@ -9,7 +9,7 @@ const cr = (key: string, ...p: string[]) => ["curveReport", key, ...p] as const;
+ 
+ export const useRealtimePower    = (id: string)                                => useQuery({ queryKey: cr("rtPower",   id),           queryFn: () => fetchRealtimePower(id),             enabled: !!id, staleTime: 30_000, refetchInterval: 60_000 });
+ export const useTotalActivePower = (id: string, s: string, e: string)          => useQuery({ queryKey: cr("totalPower",id,s,e),        queryFn: () => fetchTotalActivePower(id,s,e),      enabled: !!id&&!!s&&!!e, staleTime: 60_000 });
+-export const usePcsCurve         = (cab: string, date: string, invN = 1)       => useQuery({ queryKey: cr("pcsCurve",  cab,date,String(invN)), queryFn: () => fetchPcsCurve(cab,date,invN), enabled: !!cab&&!!date, staleTime: 60_000 });
++export const usePcsCurve         = (cab: string, date: string, invN = 1, stationId?: string) => useQuery({ queryKey: cr("pcsCurve", cab, date, String(invN), stationId ?? ""), queryFn: () => fetchPcsCurve(cab, date, invN, stationId), enabled: !!cab && !!date, staleTime: 60_000 });
+ export const useClusterCurve     = (rack: string, s: string, e: string)        => useQuery({ queryKey: cr("cluster",   rack,s,e),       queryFn: () => fetchClusterCurve(rack,s,e),        enabled: !!rack&&!!s&&!!e, staleTime: 60_000 });
+ export const useClusterStat      = (rack: string)                              => useQuery({ queryKey: cr("clusterStat",rack),          queryFn: () => fetchClusterStat(rack),             enabled: !!rack, staleTime: 30_000 });
+ export const useCellCurve        = (cell: string, s: string, e: string)        => useQuery({ queryKey: cr("cell",      cell,s,e),       queryFn: () => fetchCellCurve(cell,s,e),           enabled: !!cell&&!!s&&!!e, staleTime: 60_000 });
+diff --git a/hooks/useStrategy.ts b/hooks/useStrategy.ts
+new file mode 100644
+index 0000000..58872ae
+--- /dev/null
++++ b/hooks/useStrategy.ts
+@@ -0,0 +1,12 @@
++"use client";
++
++import { useQuery } from "@tanstack/react-query";
++import { fetchAntiBackflow } from "@/lib/api/services/strategy.service";
++
++export const useAntiBackflow = (stationId: string, date: string, meterId?: string) =>
++  useQuery({
++    queryKey: ["strategy", "antiBackflow", stationId, date, meterId ?? ""],
++    queryFn:  () => fetchAntiBackflow(stationId, date, meterId),
++    enabled:  !!stationId && !!date,
++    staleTime: 60_000,
++  });
+diff --git a/lib/api/adapters/pcs.ts b/lib/api/adapters/pcs.ts
+index 1190875..abaf67d 100644
+--- a/lib/api/adapters/pcs.ts
++++ b/lib/api/adapters/pcs.ts
+@@ -438,16 +438,9 @@ export async function fetchCabinetDetailReal(deviceId: string): Promise<CabinetD
+       socPct:               0,   // not in UGX API v1.0
+       realtimeCapacityKwh:  0,   // not in UGX API v1.0
+     },
+-    waterChiller: {
+-      tmsStatus:         "auto",
+-      outletTempC:       0,
+-      inletTempC:        0,
+-      ambientTempC:      0,
+-      inletPressureBar:  0,
+-      outletPressureBar: 0,
+-      compressorSpeedRpm: 0,
+-      pumpSpeedRpm:       0,
+-    },
++    // UGX API v1.0 has no water chiller telemetry keys — return empty array.
++    // The UI renders nothing when the array is empty.
++    waterChillers: [],
+   };
+ }
+ 
+diff --git a/lib/api/mock/curveReport.mock.ts b/lib/api/mock/curveReport.mock.ts
+index 5cadb6e..7e26681 100644
+--- a/lib/api/mock/curveReport.mock.ts
++++ b/lib/api/mock/curveReport.mock.ts
+@@ -1,3 +1,6 @@
++import { mockStationSummary } from "./powerStation.mock";
++import { mockHierarchy }      from "./equipment.mock";
++
+ // ── Helpers ───────────────────────────────────────────────────────────────────
+ function timePoints(intervalMins = 15) {
+   const pts: { t: string }[] = [];
+@@ -22,7 +25,7 @@ function rangePoints(startDate: string, endDate: string) {
+ export interface WholePowerPoint { t: string; realtimePower: number; }
+ 
+ export function mockRealtimePower(stationId: string): WholePowerPoint[] {
+-  const peak = stationId === "bspgcl-bihar" ? 5000 : stationId === "sunsure-jp" ? 2500 : stationId === "bijlee-pune" ? 250 : 500;
++  const peak = mockStationSummary(stationId).installedKw;
+   return timePoints().map(({ t }) => {
+     const h = parseInt(t.split(":")[0]);
+     let p = 0;
+@@ -38,7 +41,7 @@ export function mockTotalActivePower(stationId: string, startDate: string, endDa
+     timePoints(30).map(({ t }) => {
+       const h = parseInt(t.split(":")[0]);
+       let p = 0;
+-      const peak = stationId === "bspgcl-bihar" ? 5000 : stationId === "sunsure-jp" ? 2500 : 500;
++      const peak = mockStationSummary(stationId).installedKw;
+       if (h >= 10 && h < 15) p = -(peak * 0.7);
+       else if (h >= 18 && h < 22) p = peak * 0.8;
+       return { t: `${date} ${t}`, power: Math.round(p * 10) / 10 };
+@@ -49,10 +52,18 @@ export function mockTotalActivePower(stationId: string, startDate: string, endDa
+ // ── Single-cabinet PCS ────────────────────────────────────────────────────────
+ export interface PcsCurvePoint { t: string; power: number; tempA: number; tempB: number; tempC: number; phaseACurrent: number; phaseBCurrent: number; phaseCCurrent: number; phaseAVoltage: number; phaseBVoltage: number; phaseCVoltage: number; }
+ 
+-export function mockPcsCurve(cabinetId: string, date: string): PcsCurvePoint[] {
++export function mockPcsCurve(cabinetId: string, date: string, stationId?: string): PcsCurvePoint[] {
++  // Per-cabinet rated power: installedKw / number of cabinets in the station
++  let cabinetKw = 125; // UnityESS default
++  if (stationId) {
++    const s = mockStationSummary(stationId);
++    const h = mockHierarchy(stationId);
++    const totalCabinets = h.grids.flatMap(g => g.matrices.flatMap(m => m.cabinets)).length;
++    cabinetKw = totalCabinets > 0 ? Math.round(s.installedKw / totalCabinets) : 125;
++  }
+   return timePoints(15).map(({ t }) => {
+     const h = parseInt(t.split(":")[0]);
+-    const pwr = h >= 10 && h < 15 ? -200 : h >= 18 && h < 22 ? 220 : 10;
++    const pwr = h >= 10 && h < 15 ? -(cabinetKw * 1.0) : h >= 18 && h < 22 ? cabinetKw * 1.1 : cabinetKw * 0.05;
+     return {
+       t: `${t}`, power: Math.round(pwr * 10) / 10,
+       tempA: 38 + Math.random()*4, tempB: 39 + Math.random()*3, tempC: 37 + Math.random()*5,
+@@ -104,7 +115,8 @@ export interface TodRow { date: string; peak: number; shoulder: number; flat: nu
+ 
+ export function mockPowerQuantityReport(stationId: string, startDate: string, endDate: string): { charge: TodRow[]; discharge: TodRow[] } {
+   const dates = rangePoints(startDate, endDate);
+-  const base = stationId === "bspgcl-bihar" ? 4000 : stationId === "sunsure-jp" ? 1800 : 400;
++  // Energy base ≈ 80% of rated capacity (realistic daily throughput)
++  const base = mockStationSummary(stationId).capacityKwh * 0.8;
+   const mkRow = (date: string): TodRow => {
+     const peak = base * 0.25 * (0.8+Math.random()*0.4);
+     const shoulder = base * 0.30 * (0.8+Math.random()*0.4);
+diff --git a/lib/api/mock/dataAnalysis.mock.ts b/lib/api/mock/dataAnalysis.mock.ts
+index bb76c41..db8c66b 100644
+--- a/lib/api/mock/dataAnalysis.mock.ts
++++ b/lib/api/mock/dataAnalysis.mock.ts
+@@ -1,3 +1,5 @@
++import { mockHierarchy } from "./equipment.mock";
++
+ // ── Measurement point tags ────────────────────────────────────────────────────
+ export interface MeasurementPoint {
+   tagId: string;
+@@ -6,17 +8,13 @@ export interface MeasurementPoint {
+   category: string;
+ }
+ 
+-export const MOCK_POINTS: MeasurementPoint[] = [
+-  { tagId: "p001", name: "Station Total Active Power",     unit: "kW",  category: "Power" },
+-  { tagId: "p002", name: "Station Total Reactive Power",   unit: "kVar",category: "Power" },
+-  { tagId: "p003", name: "Cabinet 1 – SOC",                unit: "%",   category: "Battery" },
+-  { tagId: "p004", name: "Cabinet 2 – SOC",                unit: "%",   category: "Battery" },
+-  { tagId: "p005", name: "Cabinet 1 – DC Voltage",         unit: "V",   category: "DC" },
+-  { tagId: "p006", name: "Cabinet 1 – DC Current",         unit: "A",   category: "DC" },
+-  { tagId: "p007", name: "Cabinet 1 – IGBT-A Temperature", unit: "°C",  category: "Temperature" },
+-  { tagId: "p008", name: "Grid Frequency",                 unit: "Hz",  category: "AC" },
+-  { tagId: "p009", name: "Phase A Voltage",                unit: "V",   category: "AC" },
+-  { tagId: "p010", name: "Phase A Current",                unit: "A",   category: "AC" },
++// Station-wide points that are always present regardless of cabinet count
++const STATION_POINTS: MeasurementPoint[] = [
++  { tagId: "p-station-active-power",    name: "Station Total Active Power",   unit: "kW",  category: "Power" },
++  { tagId: "p-station-reactive-power",  name: "Station Total Reactive Power", unit: "kVar",category: "Power" },
++  { tagId: "p-grid-frequency",          name: "Grid Frequency",               unit: "Hz",  category: "AC"    },
++  { tagId: "p-phase-a-voltage",         name: "Phase A Voltage",              unit: "V",   category: "AC"    },
++  { tagId: "p-phase-a-current",         name: "Phase A Current",              unit: "A",   category: "AC"    },
+ ];
+ 
+ // ── Point history data ─────────────────────────────────────────────────────────
+@@ -39,22 +37,41 @@ function dtPoints(startDt: string, endDt: string, intervalMins = 15): string[] {
+ 
+ function generateHistory(tagId: string, startDt: string, endDt: string): PointHistoryEntry[] {
+   const times = dtPoints(startDt, endDt);
+-  let val = tagId === "p003" || tagId === "p004" ? 65
+-           : tagId === "p008" ? 50
+-           : tagId === "p009" ? 415
+-           : tagId === "p005" ? 748
+-           : 100;
++  const isSoc   = tagId.endsWith("-soc");
++  const isFreq  = tagId.includes("frequency");
++  const isVac   = tagId.includes("phase-a-voltage");
++  const isVdc   = tagId.endsWith("-vdc");
++  const isPower = tagId.includes("active-power");
++
++  let val = isSoc ? 65 : isFreq ? 50 : isVac ? 415 : isVdc ? 748 : 100;
+ 
+   return times.map(t => {
+-    val += (Math.random() - 0.5) * (tagId === "p003" || tagId === "p004" ? 1.5 : tagId === "p001" ? 40 : 5);
+-    const min = tagId === "p003" || tagId === "p004" ? 15 : 0;
+-    const max = tagId === "p003" || tagId === "p004" ? 95 : tagId === "p008" ? 52 : tagId === "p009" ? 420 : 10000;
++    val += (Math.random() - 0.5) * (isSoc ? 1.5 : isPower ? 40 : 5);
++    const min = isSoc ? 15 : 0;
++    const max = isSoc ? 95 : isFreq ? 52 : isVac ? 420 : 10000;
+     return { t, value: Math.round(Math.max(min, Math.min(max, val)) * 10) / 10 };
+   });
+ }
+ 
+ export function mockPointList(stationId: string): MeasurementPoint[] {
+-  return MOCK_POINTS;
++  const h = mockHierarchy(stationId);
++  const cabinetPoints: MeasurementPoint[] = [];
++
++  for (const grid of h.grids) {
++    for (const matrix of grid.matrices) {
++      for (const cabinet of matrix.cabinets) {
++        const label = `${grid.name} / ${matrix.name} / ${cabinet.name}`;
++        cabinetPoints.push(
++          { tagId: `${cabinet.id}-soc`,    name: `${label} – SOC`,             unit: "%",  category: "Battery"     },
++          { tagId: `${cabinet.id}-vdc`,    name: `${label} – DC Voltage`,      unit: "V",  category: "DC"          },
++          { tagId: `${cabinet.id}-idc`,    name: `${label} – DC Current`,      unit: "A",  category: "DC"          },
++          { tagId: `${cabinet.id}-temp-a`, name: `${label} – IGBT-A Temp`,     unit: "°C", category: "Temperature" },
++        );
++      }
++    }
++  }
++
++  return [...STATION_POINTS, ...cabinetPoints];
+ }
+ 
+ export function mockPointHistory(tagId: string, startDt: string, endDt: string): PointHistoryEntry[] {
+diff --git a/lib/api/mock/equipment.mock.ts b/lib/api/mock/equipment.mock.ts
+index efb59a4..ce0d303 100644
+--- a/lib/api/mock/equipment.mock.ts
++++ b/lib/api/mock/equipment.mock.ts
+@@ -65,7 +65,7 @@ export function mockCabinetDetail(cabinetId: string): CabinetDetail {
+     label: `${cabinetId.replace("c","")}# Energy Storage Cabinet`,
+     commStatus: { edgeController: "normal", pcs: "normal", bms: "normal" },
+     operationInfo: { chargeDischargeStatus: "standby", realtimePowerKw: 0, socPct: 65, realtimeCapacityKwh: 678, ...overrides.operationInfo },
+-    waterChiller: { tmsStatus: "auto", outletTempC: 24.3, inletTempC: 28.7, ambientTempC: 32.1, inletPressureBar: 1.8, outletPressureBar: 2.1, compressorSpeedRpm: 2850, pumpSpeedRpm: 1440 },
++    waterChillers: [{ tmsStatus: "auto", outletTempC: 24.3, inletTempC: 28.7, ambientTempC: 32.1, inletPressureBar: 1.8, outletPressureBar: 2.1, compressorSpeedRpm: 2850, pumpSpeedRpm: 1440 }],
+   };
+ }
+ 
+@@ -148,7 +148,7 @@ export function mockPcsSubDeviceList(stationId: string): PcsSubDevice[] {
+   const result: PcsSubDevice[] = [];
+   for (const grid of h.grids) {
+     for (const matrix of grid.matrices) {
+-      for (const cabinet of matrix.cabinets.slice(0, 2)) {
++      for (const cabinet of matrix.cabinets) {
+         for (const pile of cabinet.piles) {
+           result.push({
+             cabinetPath: `${grid.name}-${matrix.name}-${cabinet.name}-${pile.name}-PCS`,
+@@ -190,13 +190,13 @@ export function mockBmsSubDeviceList(stationId: string): BmsSubDevice[] {
+   const result: BmsSubDevice[] = [];
+   for (const grid of h.grids) {
+     for (const matrix of grid.matrices) {
+-      for (const cabinet of matrix.cabinets.slice(0, 2)) {
++      for (const cabinet of matrix.cabinets) {
+         for (const pile of cabinet.piles) {
+           result.push({
+             cabinetPath: `${grid.name}-${matrix.name}-${cabinet.name}-${pile.name}-BMS`,
+             cabinetId: cabinet.id,
+             pileId: pile.id,
+-            status: stationId === "bspgcl-bihar" ? "abnormal" : "abnormal",
++            status: "abnormal",
+             systemStatus: "charging",
+             totalVoltageV: 748.2,
+             totalCurrentA: -51.4,
+@@ -307,20 +307,28 @@ export interface WaterChillerData {
+ }
+ 
+ export function mockWaterChillerData(stationId: string): WaterChillerData[] {
+-  const cabCount = stationId === "bspgcl-bihar" ? 4 : 2;
+-  return Array.from({ length: cabCount }, (_, i) => ({
+-    cabinetId: `c${i+1}`,
+-    cabinetName: `1#Grid-1#Matrix-${i+1}# Energy Storage Cabinet-Water machine`,
+-    status: i < 2 ? "abnormal" : "normal",
+-    tmsWorkingStatus: "--",
+-    outletWaterTempC: 0,
+-    returnWaterTempC: 0,
+-    ambientTempC: 0,
+-    returnWaterPressureBar: 0,
+-    supplyWaterPressureBar: 0,
+-    compressorSpeedRpm: 0,
+-    waterPumpSpeedRpm: 0,
+-  }));
++  const h = mockHierarchy(stationId);
++  const result: WaterChillerData[] = [];
++  for (const grid of h.grids) {
++    for (const matrix of grid.matrices) {
++      for (const cabinet of matrix.cabinets) {
++        result.push({
++          cabinetId: cabinet.id,
++          cabinetName: `${grid.name}-${matrix.name}-${cabinet.name}-Water machine`,
++          status: "abnormal",
++          tmsWorkingStatus: "--",
++          outletWaterTempC: 0,
++          returnWaterTempC: 0,
++          ambientTempC: 0,
++          returnWaterPressureBar: 0,
++          supplyWaterPressureBar: 0,
++          compressorSpeedRpm: 0,
++          waterPumpSpeedRpm: 0,
++        });
++      }
++    }
++  }
++  return result;
+ }
+ 
+ // ── Fire protection ───────────────────────────────────────────────────────────
+@@ -331,12 +339,20 @@ export interface FireProtectionData {
+ }
+ 
+ export function mockFireProtectionData(stationId: string): FireProtectionData[] {
+-  const cabCount = stationId === "bspgcl-bihar" ? 4 : 2;
+-  return Array.from({ length: cabCount }, (_, i) => ({
+-    cabinetId: `c${i+1}`,
+-    cabinetName: `1#Grid-1#Matrix-${i+1}# Energy Storage Cabinet-Fire protection`,
+-    status: "abnormal" as const,
+-  }));
++  const h = mockHierarchy(stationId);
++  const result: FireProtectionData[] = [];
++  for (const grid of h.grids) {
++    for (const matrix of grid.matrices) {
++      for (const cabinet of matrix.cabinets) {
++        result.push({
++          cabinetId: cabinet.id,
++          cabinetName: `${grid.name}-${matrix.name}-${cabinet.name}-Fire protection`,
++          status: "abnormal",
++        });
++      }
++    }
++  }
++  return result;
+ }
+ 
+ // ── Electricity meter data ─────────────────────────────────────────────────────
+@@ -349,21 +365,23 @@ export interface MeterTodData {
+ }
+ 
+ export function mockMeterData(stationId: string): MeterTodData[] {
++  const h = mockHierarchy(stationId);
+   const today = new Date().toLocaleDateString("en-IN");
+-  return [
+-    {
+-      meterId: "em-001",
+-      meterName: "Main Grid Meter",
+-      date: today,
+-      charge:    { peak: 124.5, shoulder: 312.8, flat: 198.4, valley: 87.3,  total: 723.0  },
+-      discharge: { peak: 198.7, shoulder: 289.4, flat: 167.2, valley: 112.5, total: 767.8  },
+-    },
+-    {
+-      meterId: "em-002",
+-      meterName: "PV Meter",
+-      date: today,
+-      charge:    { peak: 0,     shoulder: 0,     flat: 0,     valley: 0,     total: 0      },
+-      discharge: { peak: 312.4, shoulder: 421.6, flat: 298.3, valley: 189.7, total: 1222.0 },
+-    },
+-  ];
++  // One grid-side meter per grid, plus one PV meter for stations with solar
++  const meters: MeterTodData[] = h.grids.map((grid, i) => ({
++    meterId: `em-${String(i + 1).padStart(3, "0")}`,
++    meterName: h.grids.length > 1 ? `${grid.name} Grid Meter` : "Main Grid Meter",
++    date: today,
++    charge:    { peak: 124.5, shoulder: 312.8, flat: 198.4, valley: 87.3,  total: 723.0  },
++    discharge: { peak: 198.7, shoulder: 289.4, flat: 167.2, valley: 112.5, total: 767.8  },
++  }));
++  // Add a PV meter (most C&I sites have one)
++  meters.push({
++    meterId: `em-${String(h.grids.length + 1).padStart(3, "0")}`,
++    meterName: "PV Meter",
++    date: today,
++    charge:    { peak: 0,     shoulder: 0,     flat: 0,     valley: 0,     total: 0      },
++    discharge: { peak: 312.4, shoulder: 421.6, flat: 298.3, valley: 189.7, total: 1222.0 },
++  });
++  return meters;
+ }
+diff --git a/lib/api/mock/strategy.mock.ts b/lib/api/mock/strategy.mock.ts
+new file mode 100644
+index 0000000..f858274
+--- /dev/null
++++ b/lib/api/mock/strategy.mock.ts
+@@ -0,0 +1,21 @@
++import type { AntiBackflowEntry } from "../types";
++
++export function mockAntiBackflowData(stationId: string, date: string): AntiBackflowEntry[] {
++  const pts: AntiBackflowEntry[] = [];
++  // Threshold varies by station installed power (larger stations have higher thresholds)
++  const threshold = stationId === "bspgcl-bihar" ? 4000 : stationId === "sunsure-jp" ? 2000 : 150;
++  for (let h = 0; h < 24; h++) {
++    for (let m = 0; m < 60; m += 30) {
++      const t = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
++      const gridPower    = h >= 8 && h < 22 ? threshold * 0.8 + Math.sin(h / 3) * threshold * 0.27 : threshold * 0.13;
++      const batteryPower = h >= 10 && h < 15 ? -(threshold * 0.53) : h >= 18 && h < 21 ? threshold * 0.67 : 0;
++      pts.push({
++        t,
++        gridPowerKw:    Math.round(gridPower    * 10) / 10,
++        batteryPowerKw: Math.round(batteryPower * 10) / 10,
++        threshold,
++      });
++    }
++  }
++  return pts;
++}
+diff --git a/lib/api/services/curveReport.service.ts b/lib/api/services/curveReport.service.ts
+index 690ab69..3133deb 100644
+--- a/lib/api/services/curveReport.service.ts
++++ b/lib/api/services/curveReport.service.ts
+@@ -119,9 +119,9 @@ export const fetchTotalActivePower = async (
+ 
+ // ── Mock-only services (not wired to UGX in v1) ──────────────────────────────
+ 
+-export const fetchPcsCurve = async (cabinetId: string, date: string, invN = 1): Promise<PcsCurvePoint[]> => {
++export const fetchPcsCurve = async (cabinetId: string, date: string, invN = 1, stationId?: string): Promise<PcsCurvePoint[]> => {
+   if (USE_REAL_CURVE_REPORT) return fetchPcsCurveReal(cabinetId, date, invN);
+-  if (IS_MOCK) { await mockDelay(300); return mockPcsCurve(cabinetId, date); }
++  if (IS_MOCK) { await mockDelay(300); return mockPcsCurve(cabinetId, date, stationId); }
+   return apiFetch(`${BASE}/singleCabinetPcs/select`, { params: { cabinetId, date } });
+ };
+ 
+diff --git a/lib/api/services/strategy.service.ts b/lib/api/services/strategy.service.ts
+new file mode 100644
+index 0000000..d3fccc2
+--- /dev/null
++++ b/lib/api/services/strategy.service.ts
+@@ -0,0 +1,19 @@
++import { IS_MOCK, apiFetch, mockDelay } from "../client";
++import { mockAntiBackflowData } from "../mock/strategy.mock";
++import type { AntiBackflowEntry } from "../types";
++
++const BASE = "/energy-storage-manage/strategy";
++
++export async function fetchAntiBackflow(
++  stationId: string,
++  date: string,
++  meterId?: string
++): Promise<AntiBackflowEntry[]> {
++  if (IS_MOCK) {
++    await mockDelay(300);
++    return mockAntiBackflowData(stationId, date);
++  }
++  return apiFetch(`${BASE}/antiBackflow`, {
++    params: { powerStationId: stationId, date, meterId },
++  });
++}
+diff --git a/lib/api/types/index.ts b/lib/api/types/index.ts
+index 35d1f31..68f2ca9 100644
+--- a/lib/api/types/index.ts
++++ b/lib/api/types/index.ts
+@@ -173,6 +173,17 @@ export interface DeviceTreeNode {
+   subDevice: DeviceTreeNode[];
+ }
+ 
++export interface WaterChillerInfo {
++  tmsStatus: "auto" | "manual" | "off";
++  outletTempC: number;
++  inletTempC: number;
++  ambientTempC: number;
++  inletPressureBar: number;
++  outletPressureBar: number;
++  compressorSpeedRpm: number;
++  pumpSpeedRpm: number;
++}
++
+ export interface CabinetDetail {
+   cabinetId: string;
+   label: string;
+@@ -187,16 +198,7 @@ export interface CabinetDetail {
+     socPct: number;
+     realtimeCapacityKwh: number;
+   };
+-  waterChiller: {
+-    tmsStatus: "auto" | "manual" | "off";
+-    outletTempC: number;
+-    inletTempC: number;
+-    ambientTempC: number;
+-    inletPressureBar: number;
+-    outletPressureBar: number;
+-    compressorSpeedRpm: number;
+-    pumpSpeedRpm: number;
+-  };
++  waterChillers: WaterChillerInfo[];
+ }
+ 
+ export interface BmsData {
+-- 
+2.34.1
+

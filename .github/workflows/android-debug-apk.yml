@@ -1,0 +1,90 @@
+# Builds an installable debug APK.
+#
+# Exists because compiling an APK needs a JDK and the Android SDK, and putting
+# roughly 6 GB of Android Studio on every machine that wants to try the app is a
+# poor trade when a runner already has both. It is also the pipeline the signed
+# release build will grow out of in Phase 5.
+#
+# The artifact is a *debug* APK: signed with the throwaway debug key, so it
+# installs on a phone with "install unknown apps" enabled, and cannot be
+# uploaded to Play.
+name: Android debug APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_base:
+        description: >-
+          Origin of the deployed gateway proxy, no trailing slash. Leave blank
+          and the app installs and renders but shows no readings — a static
+          bundle has no server of its own to answer /api/gw.
+        required: false
+        default: ""
+  push:
+    # main first, and it is the one that matters. This watched only
+    # feat/android-app-phase-1, which was merged and is no longer written to —
+    # so from the merge onwards every push that changed the app built nothing,
+    # and the only APKs produced were the ones someone remembered to dispatch
+    # by hand. A trigger pinned to a finished branch fails silently, which is
+    # the worst way for a build to fail: nothing goes red.
+    branches: [main, feat/android-app-phase-1]
+    paths:
+      - "android_app/**"
+      - "mobile_app_kunal_backend/**"
+      - ".github/workflows/android-debug-apk.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: android_app/package-lock.json
+
+      # Android Gradle Plugin 8.x requires 17+; 21 is the current LTS.
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      # The runner image ships the SDK, but this accepts the licences that
+      # assembleDebug refuses to proceed without.
+      - uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        working-directory: android_app
+        run: npm ci
+
+      # Typechecks and builds the shared /k source into dist/. Note the web
+      # source lives one directory up, so this depends on the full checkout.
+      - name: Build web bundle
+        working-directory: android_app
+        env:
+          VITE_API_BASE: ${{ github.event.inputs.api_base || vars.GW_API_BASE }}
+          # Matches GW_APP_TOKEN on the deployment. A repo *secret* rather than
+          # a variable — it ends up readable inside the APK either way, but
+          # there is no reason to also print it in build logs.
+          VITE_APP_TOKEN: ${{ secrets.GW_APP_TOKEN }}
+        run: npm run build
+
+      - name: Copy bundle into the native project
+        working-directory: android_app
+        run: npx cap sync android
+
+      - name: Assemble debug APK
+        working-directory: android_app/android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Report size
+        run: ls -lh android_app/android/app/build/outputs/apk/debug/*.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unityess-debug-apk
+          path: android_app/android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 30

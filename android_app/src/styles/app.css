@@ -1,0 +1,53 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Shell styles for the packaged app.
+   ───────────────────────────────────────────────────────────────────────────
+   Everything visual belongs to mobile.css, which is generated from
+   tokens.json. This file covers only what a browser tab gave the web build for
+   free and a WebView does not: the document background, the font variable that
+   next/font used to define, and the scroll behaviour that makes a web page
+   feel like a page rather than an app.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  /* Matches the themeColor in app/k/layout.tsx, so the WebView background
+     behind the app and the app itself are the same colour and there is no
+     flash between them at launch. */
+  background: #070b1a;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Kills the rubber-band overscroll that reveals the WebView behind the
+     app — the single clearest tell that an Android app is a web view. */
+  overscroll-behavior: none;
+}
+
+html.light body {
+  background: #edf1f9;
+}
+
+#root {
+  /* The dock floats above the content, so the shell must be able to grow
+     past the viewport without the body itself scrolling. */
+  min-height: 100%;
+  isolation: isolate;
+}
+
+/* A long-press on a control should feel like a button, not like selecting
+   text in a document. Inputs keep their normal behaviour. */
+body {
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+input,
+textarea,
+[contenteditable] {
+  -webkit-user-select: text;
+  user-select: text;
+}

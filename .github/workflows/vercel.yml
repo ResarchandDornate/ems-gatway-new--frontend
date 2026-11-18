@@ -1,0 +1,53 @@
+# Vercel preview of the web app, at https://unity-ems.vercel.app.
+#
+# Vercel's own GitHub integration cannot be used: the repo is private and owned
+# by an organization, which the Hobby plan refuses to link. So this job pushes
+# the checkout to Vercel with the CLI instead, and Vercel builds it remotely.
+#
+# Needs the VERCEL_TOKEN repo secret (vercel.com → Account Settings → Tokens).
+# That page now issues project-scoped tokens with no user behind them; CLI
+# 54.x looks the user up first and fails with "Could not retrieve Project
+# Settings", so the CLI must stay at 65 or later.
+# The org and project IDs are not secrets; they come from `vercel link`.
+#
+# This is separate from deploy.yml, which ships the real portal to
+# ems.unityess.cloud. Neither waits on the other.
+name: Deploy to Vercel
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-vercel
+  cancel-in-progress: true
+
+env:
+  VERCEL_ORG_ID: team_JNAwaFdrxJdy4QwPfieQiyYg
+  VERCEL_PROJECT_ID: prj_PnYOqpmGBjL0knMhud2jG95p46xf
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for token
+        id: token
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "::warning::VERCEL_TOKEN secret is not set — skipping the Vercel deploy."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.token.outputs.present == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.token.outputs.present == 'true'
+        with:
+          node-version: "22"
+      - name: Deploy
+        if: steps.token.outputs.present == 'true'
+        run: npx --yes vercel@65.4.0 deploy --prod --yes --token "${{ secrets.VERCEL_TOKEN }}"

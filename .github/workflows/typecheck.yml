@@ -1,0 +1,43 @@
+# Type checking, moved out of the Docker build.
+#
+# `next build` type-checks again inside the image, which cost 12.6 minutes on
+# the deploy host and blew the 15-minute job limit. It is disabled there — see
+# next.config — and lives here instead, where the cache is warm and a failure
+# blocks the merge rather than the deploy.
+name: Typecheck
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  web:
+    name: Web app
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+
+  android:
+    name: Android bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: android_app/package-lock.json
+      # Its own project, its own tsconfig — and it compiles the shared /k source
+      # under different resolution rules, so passing here is not implied by the
+      # web job passing.
+      - run: npm ci
+        working-directory: android_app
+      - run: npx tsc --noEmit
+        working-directory: android_app
