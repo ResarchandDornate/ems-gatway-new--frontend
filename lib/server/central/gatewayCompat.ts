@@ -417,6 +417,12 @@ export const POINT_MAP: Record<string, { substream: string; key: string; scale?:
   p0182: { substream: "pcs_extended", key: "activepower_b" },
   p0183: { substream: "pcs_extended", key: "activepower_c" },
   p1023: { substream: "bms_extended", key: "rack_average_cell_voltage" },  // mV via s2Value
+  /* Lifetime charge / discharge per PCS, kWh (dashboard "Charge · Lifetime" /
+     "Discharge · Lifetime"). Monotonic per-PCS counters published by the
+     kinetics gateway; a gateway that does not publish them (e.g. elecod) stays
+     empty, which the screen shows as "—". */
+  p0205: { substream: "pcs_extended", key: "cleanedge_total__cumulative_charge_energy_kwh" },
+  p0206: { substream: "pcs_extended", key: "cleanedge_total__cumulative_discharge_energy_kwh" },
   /* Not an old point id: the Average Battery Temperature card reads this
      (S1 on this backend carries only the max and min). */
   avg_cell_temperature: { substream: "bms_extended", key: "rack_average_cell_temperature" },
