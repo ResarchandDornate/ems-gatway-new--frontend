@@ -12,7 +12,7 @@
 import { useEquipmentReadings } from "@/hooks/useEquipment";
 import { LoadingState } from "@/components/shared/LoadingState";
 import { EmptyState } from "@/components/shared/EmptyState";
-import { Card, Row, StatusTile, StateGrid, num } from "./equipmentUi";
+import { Card, Row, StatusTile, StateGrid, num, CommLostScope } from "./equipmentUi";
 
 /**
  * @param sourceId The cabinet the page's drill-down has selected
@@ -31,6 +31,7 @@ export function ChillerView({ stationId, sourceId }: { stationId: string; source
   const C = data.chiller;
 
   return (
+    <CommLostScope lost={data.comm.cooling.state === "Communication Lost"}>
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--gap-sm)" }}>
 
       <Card title="Unit Status">
@@ -87,5 +88,6 @@ export function ChillerView({ stationId, sourceId }: { stationId: string; source
         <StateGrid items={C.alarms} />
       </Card>
     </div>
+    </CommLostScope>
   );
 }

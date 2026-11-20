@@ -1,5 +1,12 @@
 "use client";
 
+import { createContext, useContext } from "react";
+
+/** True for a card whose device link is lost: its readings that stopped
+ *  arriving render "Unavailable" instead of being omitted, so a communication
+ *  loss never makes a row silently vanish. Default false = unchanged behaviour. */
+const CommLostCtx = createContext(false);
+
 /**
  * The shapes every equipment tab is built from.
  *
@@ -12,14 +19,22 @@
 
 export const num = (v: number | null, dp = 2) => (v == null ? "—" : v.toFixed(dp));
 
-export function Card({ title, children, note }: { title: string; children: React.ReactNode; note?: string }) {
+/** Wrap a single-asset view's body so every Card/Row inside inherits one
+ *  communication-lost verdict. A Card may still override with its own prop. */
+export function CommLostScope({ lost, children }: { lost: boolean; children: React.ReactNode }) {
+  return <CommLostCtx.Provider value={lost}>{children}</CommLostCtx.Provider>;
+}
+
+export function Card({ title, children, note, commLost }: { title: string; children: React.ReactNode; note?: string; commLost?: boolean }) {
+  const inherited = useContext(CommLostCtx);
+  const lost = commLost ?? inherited;
   return (
     <div className="surface-card" style={{ padding: "var(--pad-sm) var(--pad) var(--pad)" }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, marginBottom: 11 }}>
         <h3 className="card-title">{title}</h3>
-        {note && <span style={{ fontSize: 11, color: "var(--muted)" }}>{note}</span>}
+        {(note || lost) && <span style={{ fontSize: 11, fontWeight: lost ? 700 : 400, color: lost ? "var(--pill-red-ink, #b4232a)" : "var(--muted)" }}>{lost ? "Communication Lost" : note}</span>}
       </div>
-      {children}
+      <CommLostCtx.Provider value={lost}>{children}</CommLostCtx.Provider>
     </div>
   );
 }
@@ -28,8 +43,14 @@ export function Card({ title, children, note }: { title: string; children: React
  *  Only readings the gateway actually sends are shown: an empty value ("—")
  *  means the field is not reported for this source, so the row is omitted
  *  rather than drawn as a dash. */
-export function Row({ label, value, unit }: { label: string; value: string; unit?: string }) {
-  if (value == null || value === "—" || value === "") return null;
+export function Row({ label, value, unit, commLost }: { label: string; value: string; unit?: string; commLost?: boolean }) {
+  const inherited = useContext(CommLostCtx);
+  const lost = commLost ?? inherited;
+  const empty = value == null || value === "—" || value === "";
+  // Field never reported for this source -> omit (unchanged). The same field on a
+  // device whose link is lost -> show "Unavailable", never hide it.
+  if (empty && !lost) return null;
+  const display = empty ? "Unavailable" : value;
   return (
     <div style={{
       display: "flex", alignItems: "baseline", justifyContent: "space-between",
@@ -38,9 +59,9 @@ export function Row({ label, value, unit }: { label: string; value: string; unit
       <span style={{ fontSize: 11.5, color: "var(--ink3)", minWidth: 0, overflowWrap: "anywhere" }}>
         {label}
       </span>
-      <span style={{ fontSize: 12.5, fontWeight: 700, fontVariantNumeric: "tabular-nums", color: "var(--ink)", whiteSpace: "nowrap" }}>
-        {/* No unit after a dash: "— °C" reads as a reading of nothing degrees. */}
-        {value}{unit && value !== "—" && <small style={{ fontSize: 10, fontWeight: 500, color: "var(--muted)" }}> {unit}</small>}
+      <span style={{ fontSize: 12.5, fontWeight: empty ? 500 : 700, fontVariantNumeric: "tabular-nums", color: empty ? "var(--muted)" : "var(--ink)", whiteSpace: "nowrap" }}>
+        {/* No unit after "Unavailable" or a dash. */}
+        {display}{unit && !empty && <small style={{ fontSize: 10, fontWeight: 500, color: "var(--muted)" }}> {unit}</small>}
       </span>
     </div>
   );

@@ -311,12 +311,12 @@ export function s2General(base: string, auth: string, gw: string, sub: string, s
     try {
       const r = await fetch(`${base}/api/v1/telemetry/latest?${qs}`, { headers: { authorization: auth, accept: "application/json" }, cache: "no-store", signal });
       if (!r.ok) return;
-      const b = (await r.json()) as { results?: { asset_id?: string; source_id?: string; value?: number | null; time?: string }[] };
+      const b = (await r.json()) as { results?: { asset_id?: string; source_id?: string; value?: number | null; time?: string; quality?: string }[] };
       for (const p of b.results ?? []) {
         if (!own.has(tokenOf(p.source_id))) continue;   // another gateway's source
         rows.push({
           substream: sub, asset_id: (p.asset_id && assets.toOld.get(p.asset_id)) ?? p.asset_id ?? null, point_id: key, signal: key,
-          value: p.value == null ? null : String(s2Value(key, p.value)), unit: null, category: null, quality: "good",
+          value: p.value == null ? null : String(s2Value(key, p.value)), unit: null, category: null, quality: (p.quality as string) ?? "good",
           sample_time_utc: p.time ?? null, received_at_utc: null, data: {},
         });
       }
@@ -449,10 +449,10 @@ export const POINT_MAP: Record<string, { substream: string; key: string; scale?:
   avg_cell_temperature: { substream: "bms_extended", key: "rack_average_cell_temperature" },
 };
 
-const pointRow = (asset: string, pointId: string, m: { substream: string; key: string; scale?: number }, value: number | null | undefined, time: string | null | undefined) => ({
+const pointRow = (asset: string, pointId: string, m: { substream: string; key: string; scale?: number }, value: number | null | undefined, time: string | null | undefined, quality?: string | null) => ({
   substream: m.substream, asset_id: asset, point_id: pointId, signal: m.key,
   value: value == null || !Number.isFinite(value) ? null : String(Math.round(s2Value(m.key, value) * (m.scale ?? 1) * 1e6) / 1e6),
-  unit: null, category: null, quality: "good",
+  unit: null, category: null, quality: quality ?? "good",
   sample_time_utc: time ?? null, received_at_utc: null, data: {},
 });
 
@@ -467,11 +467,11 @@ export async function s2Point(base: string, auth: string, gw: string, pointId: s
   try {
     const r = await fetch(`${base}/api/v1/telemetry/latest?${qs}`, { headers: { authorization: auth, accept: "application/json" }, cache: "no-store" });
     if (!r.ok) return [];
-    const b = (await r.json()) as { results?: { asset_id?: string; source_id?: string; value?: number | null; time?: string }[] };
+    const b = (await r.json()) as { results?: { asset_id?: string; source_id?: string; value?: number | null; time?: string; quality?: string }[] };
     return (b.results ?? []).flatMap((x) => {
       if (!own.has(tokenOf(x.source_id))) return [];   // another gateway's source
       const old = x.asset_id ? assets.toOld.get(x.asset_id) : undefined;
-      return old ? [pointRow(old, pointId, m, x.value, x.time)] : [];
+      return old ? [pointRow(old, pointId, m, x.value, x.time, x.quality)] : [];
     });
   } catch {
     return [];
