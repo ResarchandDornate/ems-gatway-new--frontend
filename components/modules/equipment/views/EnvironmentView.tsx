@@ -44,10 +44,14 @@ export function EnvironmentView({ stationId, sourceId }: { stationId: string; so
       </Card>
 
       <Card title="Fire Protection">
-        <div style={{ marginBottom: 12 }}>
-          {/* Stale data is not "Online": the bit is the panel's last report. */}
-          <StatusTile label="Fire Protection Communication" state={data.comm.fire.state} at={data.comm.fire.at} />
-        </div>
+        {/* Fire panel is hard-wired to the IO module on some sites and reports
+            no comm link — show this status only when the gateway actually
+            sends fire telemetry (otherwise it would read a misleading "Offline"). */}
+        {data.comm.fire.at != null && (
+          <div style={{ marginBottom: 12 }}>
+            <StatusTile label="Fire Protection Communication" state={data.comm.fire.state} at={data.comm.fire.at} />
+          </div>
+        )}
 
         {/*
           The reference EMS shows a per-detector table — Battery Box 1..5 and an

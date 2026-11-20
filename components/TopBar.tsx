@@ -29,7 +29,8 @@ const TABS: { label: string; path: string }[] = [
   { label: "Alarms",                    path: "/alarms" },
   /* Named Genie; the address stays /curve-report so links keep working. */
   { label: "Genie",                     path: "/curve-report" },
-  { label: "Analysis",                  path: "/data-analysis" },
+  // Analysis — archived for now (hidden from the nav; the page code is kept).
+  // { label: "Analysis",               path: "/data-analysis" },
   { label: "Strategy",                  path: "/strategy" },
   /* Gateway Health is NOT here. It describes the backend link rather than the
      plant, so it lives in the account menu below, next to the identity it

@@ -242,7 +242,7 @@ export async function fetchDeviceSeries(
 const SUBSTREAM_OF: Record<string, string> = {
   pcs: "pcs_extended",
   bms: "bms_extended",
-  grid_meter: "utility_meter",
+  grid_meter: "combiner_box_meter",   // backend has no utility_meter substream; grid MFM is combiner_box_meter
 };
 
 function splitCentral(assetId: string): { sourceId: string; kind: string; substream: string } | null {

@@ -40,6 +40,13 @@ const BASE_NAV_ITEMS: NavItem[] = [
 
 const WMS_NAV_ITEM: NavItem = { key: "weather-station", label: "Weather Station" };
 
+/* Sites whose Main Wiring Diagram is archived for now — the tab is hidden for
+   them only; every other site keeps it. Keyed by gateway id (the station id).
+   1545be97… = test-gw-01, the Cleanedge site (profile cleanedge_kinetics). */
+const WIRING_ARCHIVED = new Set<string>([
+  "1545be97-67a4-4491-9bc8-48070fe9e607",
+]);
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 export function PowerStationMonitoring({ stationId }: { stationId: string }) {
   /* ?view=single-station&range=week opens a tab and range directly — the
@@ -64,14 +71,21 @@ export function PowerStationMonitoring({ stationId }: { stationId: string }) {
   // Anchored to the tab it belongs before rather than to an index: the index
   // form silently reordered this the moment a tab above it was removed.
   const navItems: NavItem[] = (() => {
-    if (!plantConfig?.wms) return BASE_NAV_ITEMS;
-    const at = BASE_NAV_ITEMS.findIndex((i) => i.key === "network-topology");
-    const before = at === -1 ? BASE_NAV_ITEMS.length : at;
-    return [...BASE_NAV_ITEMS.slice(0, before), WMS_NAV_ITEM, ...BASE_NAV_ITEMS.slice(before)];
+    const base = WIRING_ARCHIVED.has(stationId)
+      ? BASE_NAV_ITEMS.filter((i) => i.key !== "wiring")
+      : BASE_NAV_ITEMS;
+    if (!plantConfig?.wms) return base;
+    const at = base.findIndex((i) => i.key === "network-topology");
+    const before = at === -1 ? base.length : at;
+    return [...base.slice(0, before), WMS_NAV_ITEM, ...base.slice(before)];
   })();
 
+  /* A tab this site does not have (e.g. wiring on an archived site, or after
+     switching sites in the dropdown) falls back to the first one it does. */
+  const currentNav: NavKey = navItems.some((i) => i.key === activeNav) ? activeNav : navItems[0].key;
+
   function renderView() {
-    switch (activeNav) {
+    switch (currentNav) {
       /* The site's electrical drawings (lib/drawings), under the live tiles the
          parked flow diagram (views/WiringDiagram.tsx) used to carry. */
       case "wiring":
@@ -96,7 +110,7 @@ export function PowerStationMonitoring({ stationId }: { stationId: string }) {
     }
   }
 
-  const activeLabel = navItems.find((i) => i.key === activeNav)?.label ?? "";
+  const activeLabel = navItems.find((i) => i.key === currentNav)?.label ?? "";
 
   return (
     <div className="page-fill" style={{ overflowY: "auto", paddingRight: 4, display: "flex", flexDirection: "column", gap: 12 }}>
@@ -119,7 +133,7 @@ export function PowerStationMonitoring({ stationId }: { stationId: string }) {
             <button
               key={item.key}
               onClick={() => setActiveNav(item.key)}
-              className={`ps-sm-item${activeNav === item.key ? " on" : ""}`}
+              className={`ps-sm-item${currentNav === item.key ? " on" : ""}`}
             >
               <span>{item.label}</span>
             </button>

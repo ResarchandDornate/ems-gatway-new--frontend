@@ -227,8 +227,8 @@ export const NORTHBOUND_PROFILE: Profile = {
     // ── Cabinet environment ──────────────────────────────────────────────────
     "hvac.indoorTemp": { kind: "field", path: D + "current_temperature" },
     "hvac.humidity":   { kind: "field", path: D + "current_humidity" },
-    "fire.alarmLevel1": { kind: "field", path: F + "fire_alarm" },
-    "fire.alarmLevel2": { kind: "field", path: F + "fire_alarm_temperature" },
+    "fire.alarmLevel1": { kind: "field", path: F + "di6h" },               // Fire Alarm L1 (backend key)
+    "fire.alarmLevel2": { kind: "field", path: F + "di4h" },               // Fire Alarm L2 (backend key)
 
     // ── Utility meter ────────────────────────────────────────────────────────
     "meter.activePowerTotal": { kind: "field", path: M + "total_active_power" },

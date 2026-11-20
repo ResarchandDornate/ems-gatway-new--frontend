@@ -172,6 +172,10 @@ export interface ReadableAlarm {
   content: string;
   /** `Dehumidifier Alarm Status` — the event type, readable. */
   code: string;
+  /** CG-6.3.4: device type from the S4 catalogue payload, when present. */
+  deviceType?: string;
+  /** CG-6.3.4: the alarm's current value, when the catalogue sends one. */
+  value?: string;
 }
 
 /**
@@ -185,7 +189,19 @@ export interface ReadableAlarm {
 export function readableAlarm(e: {
   asset_id?: string | null; source_id?: string | null; message?: string | null;
   event_type?: string | null; signal_name?: string | null;
+  payload?: Record<string, unknown> | null; current_value?: unknown;
 }): ReadableAlarm {
+  /* CG-6.3.4 (Phase 6.3.4): when the S4 catalogue sends operator-facing fields,
+     prefer them over names parsed from signal strings. */
+  const _pl = e.payload && typeof e.payload === "object" ? (e.payload as Record<string, unknown>) : undefined;
+  const _plStr = (k: string): string | undefined => {
+    const v = _pl?.[k];
+    return typeof v === "string" && v.trim() ? v.trim() : undefined;
+  };
+  const _pDevice = _plStr("device");
+  const _pDeviceType = _plStr("device_type");
+  const _pName = _plStr("name");
+  const _pValue = e.current_value == null || e.current_value === "" ? undefined : String(e.current_value);
   const src = /external_ems_\d+/.exec(`${e.asset_id ?? ""} ${e.source_id ?? ""} ${e.message ?? ""}`)?.[0] ?? "";
   const kind = kindOfEvent(e) ?? "";
   const bess = src ? bessLabel(src) : "";
@@ -210,7 +226,15 @@ export function readableAlarm(e: {
   content = content ? titleCase(content) : kind || "Alarm";
 
   const code = type ? titleCase(type) : e.signal_name && !RAW_ID.test(e.signal_name) ? titleCase(e.signal_name) : "";
-  return { device, kind, content, code };
+  return {
+    device: _pDevice ?? device,
+    kind,
+    content: _pName ?? content,
+    // CG-6.3.4: Alarm Code = signal_name (the catalogue code) when it is one.
+    code: e.signal_name && e.signal_name.includes(".") ? e.signal_name : code,
+    deviceType: _pDeviceType,
+    value: _pValue,
+  };
 }
 
 /**
@@ -519,7 +543,7 @@ export async function fetchAlarms(
       deviceName: rd.device,
       id: `${assetId}:s4:${e.correlation_id ?? e.event_id ?? e.dedupe_key ?? ""}`,
       serial: 0,
-      deviceType: TYPE_LABEL[substreamOfAsset(assetId)] ?? s4TypeOf(rd.kind),
+      deviceType: rd.deviceType ?? TYPE_LABEL[substreamOfAsset(assetId)] ?? s4TypeOf(rd.kind),
       alertContent: rd.content,
       alarmCode: rd.code || (e.event_type ?? e.signal_name ?? ""),
       rawCode: e.event_type ?? e.signal_name ?? "",
@@ -551,7 +575,7 @@ export async function fetchAlarms(
         status: "resolved" as const,
         id: `${assetId}:s4:${e.dedupe_key ?? e.event_id ?? ""}:${ep.raisedTs}`,
         serial: 0,
-        deviceType: TYPE_LABEL[substreamOfAsset(assetId)] ?? s4TypeOf(rd.kind),
+        deviceType: rd.deviceType ?? TYPE_LABEL[substreamOfAsset(assetId)] ?? s4TypeOf(rd.kind),
         alertContent: rd.content,
         alarmCode: rd.code || (e.event_type ?? e.signal_name ?? ""),
         rawCode: e.event_type ?? e.signal_name ?? "",

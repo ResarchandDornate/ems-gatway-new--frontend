@@ -58,10 +58,12 @@ export function PcsView({ stationId, sourceId }: { stationId: string; sourceId?:
       </Card>
 
       {/* Phases down, quantities across — an imbalance is spotted by reading a
-          column, not a row. */}
-      <Card title="AC — Per Phase">
-        <PhaseTable phases={P.phases} />
-      </Card>
+          column, not a row. Shown only when the gateway sends per-phase data. */}
+      {P.phases.some((ph) => ph.voltageV != null || ph.currentA != null || ph.activeKw != null) && (
+        <Card title="AC — Per Phase">
+          <PhaseTable phases={P.phases} />
+        </Card>
+      )}
 
       <div style={{ display: "grid", gap: "var(--gap-sm)", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
         <Card title="Line Voltage">

@@ -24,8 +24,12 @@ export function Card({ title, children, note }: { title: string; children: React
   );
 }
 
-/** Label left, figure right. Every reading on every equipment tab. */
+/** Label left, figure right. Every reading on every equipment tab.
+ *  Only readings the gateway actually sends are shown: an empty value ("—")
+ *  means the field is not reported for this source, so the row is omitted
+ *  rather than drawn as a dash. */
 export function Row({ label, value, unit }: { label: string; value: string; unit?: string }) {
+  if (value == null || value === "—" || value === "") return null;
   return (
     <div style={{
       display: "flex", alignItems: "baseline", justifyContent: "space-between",

@@ -293,6 +293,7 @@ export function translate(path: string[], sp: URLSearchParams, method: string): 
    The guide lists no signal registry, so the keys come from s2Signals.json
    (captured once from the backend). Cached 20 s per substream. */
 import S2_SIGNALS from "./s2Signals.json";
+import { addS2PointId } from "./s2PointId.ts";
 
 const s2Cache = new Map<string, { at: number; p: Promise<unknown[]> }>();
 
@@ -306,6 +307,7 @@ export function s2General(base: string, auth: string, gw: string, sub: string, s
   let assets: AssetMap = { toNew: new Map(), toOld: new Map() };
   const one = async (key: string) => {
     const qs = new URLSearchParams({ site_id: SITE_ID(), stream: "S2", substream: sub, signal_key: key });
+    addS2PointId(qs, sub, key);   // T7: additive point_id (no-op unless enabled + resolved)
     try {
       const r = await fetch(`${base}/api/v1/telemetry/latest?${qs}`, { headers: { authorization: auth, accept: "application/json" }, cache: "no-store", signal });
       if (!r.ok) return;
@@ -355,11 +357,27 @@ export function ownedS2Tokens(base: string, auth: string, gw: string): Promise<S
   entry.p = (async () => {
     try {
       const qs = new URLSearchParams({ site_id: SITE_ID(), gateway_id: gw, limit: "1" });
-      const r = await fetch(`${base}/api/v1/health/latest?${qs}`, { headers: { authorization: auth, accept: "application/json" }, cache: "no-store" });
-      const rows = r.ok ? unwrap(await r.json()) : [];
+      const hdrs = { authorization: auth, accept: "application/json" };
+      const [hr, fr] = await Promise.all([
+        fetch(`${base}/api/v1/health/latest?${qs}`, { headers: hdrs, cache: "no-store" }),
+        fetch(`${base}/api/v1/bess/fast/latest?${qs}`, { headers: hdrs, cache: "no-store" }).catch(() => null),
+      ]);
+      const rows = hr.ok ? unwrap(await hr.json()) : [];
       const p = obj(Array.isArray(rows) ? (rows[0] as Record<string, unknown> | undefined)?.payload : undefined);
       const sources = Array.isArray(p.sources) ? (p.sources as { source_id?: unknown }[]) : [];
       const own = new Set(sources.map((s) => tokenOf(s.source_id)).filter(Boolean));
+      /* The S1 profile name lists the gateway's vendors too
+         (cleanedge_kinetics_fast_v1 → cleanedge, kinetics). Needed because a
+         gateway's health roster can use generic ids (test-gw-01 reports
+         bms_bms_source / pcs_pcs_source) while its S2 rows carry the vendor
+         ones (kinetics_pcs_source) — without this it owned none of its S2. */
+      try {
+        const frows = fr?.ok ? unwrap(await fr.json()) : [];
+        const fp = obj(Array.isArray(frows) ? (frows[0] as Record<string, unknown> | undefined)?.payload : undefined);
+        for (const t of String(fp.profile_name ?? "").split("_")) {
+          if (t && !/^(fast|slow|v\d+|bms|pcs|source)$/i.test(t)) own.add(t);
+        }
+      } catch { /* health tokens alone */ }
       if (!own.size) entry.ttl = 30_000;   // retry soon rather than hold "owns nothing"
       return own;
     } catch {
@@ -417,6 +435,15 @@ export const POINT_MAP: Record<string, { substream: string; key: string; scale?:
   p0182: { substream: "pcs_extended", key: "activepower_b" },
   p0183: { substream: "pcs_extended", key: "activepower_c" },
   p1023: { substream: "bms_extended", key: "rack_average_cell_voltage" },  // mV via s2Value
+  /* Lifetime charge / discharge per PCS, kWh (dashboard "Charge · Lifetime",
+     Power Station "Total Charge / Discharge"). The backend's signal registry
+     names them cumulative_*_energy_kwh (source cleanhedge, T3_3Y); /telemetry
+     answers 422 "unknown signal" for any other key. As of 18 Nov 2026 the
+     Cleanedge gateway publishes them vendor-prefixed
+     (cleanedge_total__cumulative_*), which the API will not serve, so these
+     read empty until the gateway sends the registry names. */
+  p0205: { substream: "pcs_extended", key: "cumulative_charge_energy_kwh" },
+  p0206: { substream: "pcs_extended", key: "cumulative_discharge_energy_kwh" },
   /* Not an old point id: the Average Battery Temperature card reads this
      (S1 on this backend carries only the max and min). */
   avg_cell_temperature: { substream: "bms_extended", key: "rack_average_cell_temperature" },
@@ -436,6 +463,7 @@ export async function s2Point(base: string, auth: string, gw: string, pointId: s
   const [assets, own] = await Promise.all([assetMap(base, auth, gw), ownedS2Tokens(base, auth, gw)]);
   if (!own.size) return [];
   const qs = new URLSearchParams({ site_id: SITE_ID(), stream: "S2", substream: m.substream, signal_key: m.key });
+  addS2PointId(qs, m.substream, m.key);   // T7
   try {
     const r = await fetch(`${base}/api/v1/telemetry/latest?${qs}`, { headers: { authorization: auth, accept: "application/json" }, cache: "no-store" });
     if (!r.ok) return [];
@@ -504,6 +532,7 @@ export async function gatewayHistoryRows(
     if (asset) {
       const own = await ownedS2Tokens(base, auth, gw);
       const lq = new URLSearchParams({ site_id: SITE_ID(), stream: "S2", substream: m.substream, signal_key: m.key, asset_id: asset });
+      addS2PointId(lq, m.substream, m.key);   // T7
       try {
         const lr = await fetch(`${base}/api/v1/telemetry/latest?${lq}`, { headers: { authorization: auth, accept: "application/json" }, cache: "no-store", signal });
         const lb = lr.ok ? ((await lr.json()) as { results?: { source_id?: string }[] }) : {};
@@ -516,6 +545,7 @@ export async function gatewayHistoryRows(
         site_id: SITE_ID(), stream: "S2", substream: m.substream, signal_key: m.key, asset_id: asset, source_id: source,
         start: new Date(from).toISOString(), stop: new Date(to).toISOString(), window: `${mins}m`, fn: "mean",
       });
+      addS2PointId(q, m.substream, m.key);   // T7
       try {
         const r = await fetch(`${base}/api/v1/telemetry/aggregate?${q}`, { headers: { authorization: auth, accept: "application/json" }, cache: "no-store", signal });
         const b = r.ok ? ((await r.json()) as { points?: { time?: string; value?: number | null }[] }) : {};
