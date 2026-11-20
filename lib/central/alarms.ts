@@ -57,6 +57,13 @@ export interface AlarmEvent {
    */
   cleared_at_utc?: string | null;
   received_at_utc: string;
+  /** CG-33: backend-resolved alarm catalogue definition for this event's
+   *  signal_name (null/absent when the signal is not in the catalogue). */
+  catalog?: {
+    code: string; english_name: string;
+    severity?: string | null; category?: string | null;
+    device_type?: string | null; description?: string | null; operator_action?: string | null;
+  } | null;
   data: Record<string, unknown>;
 }
 

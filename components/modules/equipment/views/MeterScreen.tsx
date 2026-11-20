@@ -24,7 +24,7 @@ import { usePointHistories } from "@/hooks/useDataAnalysis";
 import { makeTag } from "@/lib/api/services/pointsCentral.service";
 import { LoadingState } from "@/components/shared/LoadingState";
 import { gapFor } from "../periodHistory";
-import { Card, Row, StatusTile, PhaseTable, num } from "./equipmentUi";
+import { Card, Row, StatusTile, PhaseTable, num, CommLostScope } from "./equipmentUi";
 import { axisProps, chartTokens, tooltipStyle, cursorStyle } from "@/lib/charts/tokens";
 import { timeAxisProps, timeTooltipLabel, withGaps } from "@/lib/charts/timeAxis";
 
@@ -46,6 +46,7 @@ export function MeterScreen({ m, banner, tone = "amber", bus, traceAsset, comm }
   tone?: "amber" | "neutral";
 }) {
   return (
+    <CommLostScope lost={comm?.state === "Communication Lost"}>
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--gap-sm)" }}>
 
       <div className="surface-card" style={{
@@ -82,7 +83,7 @@ export function MeterScreen({ m, banner, tone = "amber", bus, traceAsset, comm }
       </Card>
 
       {bus && (
-        <Card title="Bus · From The PCS" note="the 415 V bus as the PCS measures it — not a meter reading">
+        <Card title="Bus · From The PCS" note="the 415 V bus as the PCS measures it — not a meter reading" commLost={false}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
             <div><Row label="Frequency" value={num(bus.frequencyHz)} unit="Hz" /></div>
             <div>
@@ -105,6 +106,7 @@ export function MeterScreen({ m, banner, tone = "amber", bus, traceAsset, comm }
         <MeterPowerChart asset={traceAsset} live={m.chart} />
       </Card>
     </div>
+    </CommLostScope>
   );
 }
 

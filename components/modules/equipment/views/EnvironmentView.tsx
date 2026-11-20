@@ -29,7 +29,7 @@ export function EnvironmentView({ stationId, sourceId }: { stationId: string; so
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--gap-sm)" }}>
 
-      <Card title="Dehumidifier">
+      <Card title="Dehumidifier" commLost={data.comm.dehumidifier.state === "Communication Lost"}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 14, marginBottom: 12 }}>
           <StatusTile label="Dehumidifier Online"  state={data.comm.dehumidifier.state} at={data.comm.dehumidifier.at} />
           {/* DH Work Mode (p1283) hidden: no published meaning for its codes. */}
@@ -43,7 +43,7 @@ export function EnvironmentView({ stationId, sourceId }: { stationId: string; so
         <Row label="Current Humidity"    value={num(E.currentHumidityPct, 1)} unit="%" />
       </Card>
 
-      <Card title="Fire Protection">
+      <Card title="Fire Protection" commLost={data.comm.fire.at != null && data.comm.fire.state === "Communication Lost"}>
         {/* Fire panel is hard-wired to the IO module on some sites and reports
             no comm link — show this status only when the gateway actually
             sends fire telemetry (otherwise it would read a misleading "Offline"). */}

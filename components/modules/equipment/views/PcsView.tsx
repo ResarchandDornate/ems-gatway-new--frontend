@@ -14,7 +14,7 @@
 import { useEquipmentReadings } from "@/hooks/useEquipment";
 import { LoadingState } from "@/components/shared/LoadingState";
 import { EmptyState } from "@/components/shared/EmptyState";
-import { Card, Row, StatusTile, PhaseTable, StateGrid, num } from "./equipmentUi";
+import { Card, Row, StatusTile, PhaseTable, StateGrid, num, CommLostScope } from "./equipmentUi";
 import { SITE_TZ } from "@/lib/api/time";
 
 /** The enum values spelled the way an operator reads them. */
@@ -44,6 +44,7 @@ export function PcsView({ stationId, sourceId }: { stationId: string; sourceId?:
   const P = data.pcs;
 
   return (
+    <CommLostScope lost={data.comm.pcs.state === "Communication Lost"}>
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--gap-sm)" }}>
 
       {/* Status first: what the converter is doing governs how every figure
@@ -126,5 +127,6 @@ export function PcsView({ stationId, sourceId }: { stationId: string; sourceId?:
         <StateGrid items={P.faults} badLabel="Fault" />
       </Card>
     </div>
+    </CommLostScope>
   );
 }

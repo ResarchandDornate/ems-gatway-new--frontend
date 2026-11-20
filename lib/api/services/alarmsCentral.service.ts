@@ -92,6 +92,9 @@ export interface CentralAlarm extends Alarm {
   rawValue: string;
   /** Values the BMS recorded at its last alarm, where there are any. */
   context: AlarmContextValue[];
+  /** CG-33: catalogue description + operator action (S4 events, when resolved). */
+  description?: string;
+  operatorAction?: string;
 }
 
 export interface AlarmCoverage {
@@ -176,6 +179,13 @@ export interface ReadableAlarm {
   deviceType?: string;
   /** CG-6.3.4: the alarm's current value, when the catalogue sends one. */
   value?: string;
+  /** CG-33: operator-facing description from the backend alarm catalogue. */
+  description?: string;
+  /** CG-33: recommended operator action from the backend alarm catalogue. */
+  operatorAction?: string;
+  /** CG-33: catalogue severity / category, when resolved. */
+  severity?: string;
+  category?: string;
 }
 
 /**
@@ -190,6 +200,10 @@ export function readableAlarm(e: {
   asset_id?: string | null; source_id?: string | null; message?: string | null;
   event_type?: string | null; signal_name?: string | null;
   payload?: Record<string, unknown> | null; current_value?: unknown;
+  catalog?: {
+    code?: string; english_name?: string; severity?: string | null; category?: string | null;
+    device_type?: string | null; description?: string | null; operator_action?: string | null;
+  } | null;
 }): ReadableAlarm {
   /* CG-6.3.4 (Phase 6.3.4): when the S4 catalogue sends operator-facing fields,
      prefer them over names parsed from signal strings. */
@@ -226,14 +240,21 @@ export function readableAlarm(e: {
   content = content ? titleCase(content) : kind || "Alarm";
 
   const code = type ? titleCase(type) : e.signal_name && !RAW_ID.test(e.signal_name) ? titleCase(e.signal_name) : "";
+  // CG-33: the backend alarm catalogue is authoritative over the gateway's
+  // embedded copy — prefer it for name, code and device type, and surface its
+  // description + operator action.
+  const _cat = e.catalog ?? undefined;
   return {
     device: _pDevice ?? device,
     kind,
-    content: _pName ?? content,
-    // CG-6.3.4: Alarm Code = signal_name (the catalogue code) when it is one.
-    code: e.signal_name && e.signal_name.includes(".") ? e.signal_name : code,
-    deviceType: _pDeviceType,
+    content: _cat?.english_name ?? _pName ?? content,
+    code: _cat?.code ?? (e.signal_name && e.signal_name.includes(".") ? e.signal_name : code),
+    deviceType: _cat?.device_type ?? _pDeviceType,
     value: _pValue,
+    description: _cat?.description ?? undefined,
+    operatorAction: _cat?.operator_action ?? undefined,
+    severity: _cat?.severity ?? undefined,
+    category: _cat?.category ?? undefined,
   };
 }
 
@@ -555,6 +576,8 @@ export async function fetchAlarms(
       signal: e.signal_name ?? "",
       rawValue: e.state ?? "ACTIVE",
       context: [],
+      description: rd.description,
+      operatorAction: rd.operatorAction,
     });
   }
 
@@ -588,6 +611,8 @@ export async function fetchAlarms(
         signal: e.signal_name ?? "",
         rawValue: "CLEARED",
         context: [],
+        description: rd.description,
+        operatorAction: rd.operatorAction,
       };
     });
   }
