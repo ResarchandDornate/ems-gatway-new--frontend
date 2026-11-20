@@ -293,6 +293,7 @@ export function translate(path: string[], sp: URLSearchParams, method: string): 
    The guide lists no signal registry, so the keys come from s2Signals.json
    (captured once from the backend). Cached 20 s per substream. */
 import S2_SIGNALS from "./s2Signals.json";
+import { addS2PointId } from "./s2PointId.ts";
 
 const s2Cache = new Map<string, { at: number; p: Promise<unknown[]> }>();
 
@@ -306,6 +307,7 @@ export function s2General(base: string, auth: string, gw: string, sub: string, s
   let assets: AssetMap = { toNew: new Map(), toOld: new Map() };
   const one = async (key: string) => {
     const qs = new URLSearchParams({ site_id: SITE_ID(), stream: "S2", substream: sub, signal_key: key });
+    addS2PointId(qs, sub, key);   // T7: additive point_id (no-op unless enabled + resolved)
     try {
       const r = await fetch(`${base}/api/v1/telemetry/latest?${qs}`, { headers: { authorization: auth, accept: "application/json" }, cache: "no-store", signal });
       if (!r.ok) return;
@@ -461,6 +463,7 @@ export async function s2Point(base: string, auth: string, gw: string, pointId: s
   const [assets, own] = await Promise.all([assetMap(base, auth, gw), ownedS2Tokens(base, auth, gw)]);
   if (!own.size) return [];
   const qs = new URLSearchParams({ site_id: SITE_ID(), stream: "S2", substream: m.substream, signal_key: m.key });
+  addS2PointId(qs, m.substream, m.key);   // T7
   try {
     const r = await fetch(`${base}/api/v1/telemetry/latest?${qs}`, { headers: { authorization: auth, accept: "application/json" }, cache: "no-store" });
     if (!r.ok) return [];
@@ -529,6 +532,7 @@ export async function gatewayHistoryRows(
     if (asset) {
       const own = await ownedS2Tokens(base, auth, gw);
       const lq = new URLSearchParams({ site_id: SITE_ID(), stream: "S2", substream: m.substream, signal_key: m.key, asset_id: asset });
+      addS2PointId(lq, m.substream, m.key);   // T7
       try {
         const lr = await fetch(`${base}/api/v1/telemetry/latest?${lq}`, { headers: { authorization: auth, accept: "application/json" }, cache: "no-store", signal });
         const lb = lr.ok ? ((await lr.json()) as { results?: { source_id?: string }[] }) : {};
@@ -541,6 +545,7 @@ export async function gatewayHistoryRows(
         site_id: SITE_ID(), stream: "S2", substream: m.substream, signal_key: m.key, asset_id: asset, source_id: source,
         start: new Date(from).toISOString(), stop: new Date(to).toISOString(), window: `${mins}m`, fn: "mean",
       });
+      addS2PointId(q, m.substream, m.key);   // T7
       try {
         const r = await fetch(`${base}/api/v1/telemetry/aggregate?${q}`, { headers: { authorization: auth, accept: "application/json" }, cache: "no-store", signal });
         const b = r.ok ? ((await r.json()) as { points?: { time?: string; value?: number | null }[] }) : {};

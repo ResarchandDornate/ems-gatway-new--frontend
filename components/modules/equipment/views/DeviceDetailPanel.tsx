@@ -67,7 +67,11 @@ const KPI_BY_KIND: Record<string, KpiSlot[]> = {
     { key: "current_humidity",    label: "Humidity",    unit: "%",  desc: "Relative" },
   ],
   fire_protection: [
-    { key: "temperature_value", label: "Panel Temp", unit: "°C", desc: "Detector Reading" },
+    { key: "di6h",       label: "Fire Alarm L1", unit: "", desc: "1 = Active" },
+    { key: "di4h",       label: "Fire Alarm L2", unit: "", desc: "1 = Active" },
+    { key: "di13h",      label: "Fire Spray FBK", unit: "", desc: "1 = Discharged" },
+    { key: "fire_start", label: "Fire Start",     unit: "", desc: "1 = Active" },
+    { key: "fire_fault", label: "Fire Fault",     unit: "", desc: "1 = Fault" },
   ],
 };
 

@@ -70,9 +70,11 @@ export function MeterScreen({ m, banner, tone = "amber", bus, traceAsset, comm }
         </div>
       </Card>
 
-      <Card title="Per Phase">
-        <PhaseTable phases={m.phases} />
-      </Card>
+      {m.phases.some((ph) => ph.voltageV != null || ph.currentA != null || ph.activeKw != null) && (
+        <Card title="Per Phase">
+          <PhaseTable phases={m.phases} />
+        </Card>
+      )}
 
       <Card title="Energy" note="Cumulative, As The Meter Counts It">
         <Row label="Import (Forward Active Energy)" value={num(m.forwardEnergyKwh, 1)} unit="kWh" />
