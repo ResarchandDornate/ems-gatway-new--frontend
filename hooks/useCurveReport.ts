@@ -9,7 +9,7 @@ import { useRevenueMaster } from "@/hooks/useRevenueMaster";
 
 const cr = (key: string, ...p: string[]) => ["curveReport", key, ...p] as const;
 
-export const useRealtimePower    = (id: string)                                => useQuery({ queryKey: cr("rtPower",   id),           queryFn: () => fetchRealtimePower(id),             enabled: !!id, staleTime: 30_000, refetchInterval: 60_000 });
+export const useRealtimePower    = (id: string)                                => useQuery({ queryKey: cr("rtPower",   id),           queryFn: () => fetchRealtimePower(id),             enabled: !!id, staleTime: 30_000, refetchInterval: 30_000 });
 export const useTotalActivePower = (id: string, s: string, e: string, refetchInterval?: number) => useQuery({ queryKey: cr("totalPower",id,s,e), queryFn: () => fetchTotalActivePower(id,s,e), enabled: !!id&&!!s&&!!e, staleTime: 60_000, refetchInterval });
 export const usePcsCurve         = (cab: string, date: string, invN = 1, stationId?: string) => useQuery({ queryKey: cr("pcsCurve", cab, date, String(invN), stationId ?? ""), queryFn: () => fetchPcsCurve(cab, date, invN, stationId), enabled: !!cab && !!date, staleTime: 60_000 });
 export const useClusterCurve     = (rack: string, s: string, e: string)        => useQuery({ queryKey: cr("cluster",   rack,s,e),       queryFn: () => fetchClusterCurve(rack,s,e),        enabled: !!rack&&!!s&&!!e, staleTime: 60_000 });

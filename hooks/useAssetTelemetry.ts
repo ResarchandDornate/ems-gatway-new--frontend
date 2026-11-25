@@ -36,7 +36,7 @@ export function useAssetSeries(assetId: string, key: string) {
     queryFn:  () => fetchAssetSeries(gatewayId, assetId, key),
     enabled:  !!gatewayId && !!assetId && !!key,
     staleTime: 30_000,
-    refetchInterval: 60_000,
+    refetchInterval: 30_000,
   });
 }
 

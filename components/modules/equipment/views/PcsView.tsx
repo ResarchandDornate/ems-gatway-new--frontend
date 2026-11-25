@@ -15,6 +15,9 @@ import { useEquipmentReadings } from "@/hooks/useEquipment";
 import { LoadingState } from "@/components/shared/LoadingState";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { Card, Row, StatusTile, PhaseTable, StateGrid, num, CommLostScope } from "./equipmentUi";
+import { MultiSeriesPeriodCard } from "@/components/dashboard/viz/MultiSeriesPeriodCard";
+import { useSelectedCabinets } from "@/hooks/useDashboardCentral";
+import { series } from "@/lib/charts/tokens";
 import { SITE_TZ } from "@/lib/api/time";
 
 /** The enum values spelled the way an operator reads them. */
@@ -33,6 +36,9 @@ const flag = (v: number | null | undefined, on: string, off: string) => (v == nu
  */
 export function PcsView({ stationId, sourceId }: { stationId: string; sourceId?: string }) {
   const { data, isLoading, isError } = useEquipmentReadings(stationId, sourceId);
+  /* The cabinet this converter sits in, for its fast-stream history tags. */
+  const { all } = useSelectedCabinets();
+  const cab = sourceId ? all.find((c) => c.sourceId === sourceId) : all[0];
 
   if (isLoading) return <LoadingState rows={4} />;
   if (isError || !data) {
@@ -118,6 +124,19 @@ export function PcsView({ stationId, sourceId }: { stationId: string; sourceId?:
           <Row label="AC Lifetime Discharge"     value={num(P.acHistoricalDischargeKwh, 0)} unit="kWh" />
         </Card>
       </div>
+
+      {/* Line voltage over time — AB / BC / CA as three lines. Off the 1 s fast
+          stream (grid_voltage_*_v); the numbers above are its latest sample. */}
+      {cab && (
+        <MultiSeriesPeriodCard
+          title="Line Voltage" cabinets={[cab]} unit="V"
+          specs={[
+            { label: "AB", color: series("primary").stroke,   combine: "max", tagOf: (c) => `fast:${c.bessId}:pcs_values::grid_voltage_ab_v` },
+            { label: "BC", color: series("secondary").stroke, combine: "max", tagOf: (c) => `fast:${c.bessId}:pcs_values::grid_voltage_bc_v` },
+            { label: "CA", color: "var(--green)",             combine: "max", tagOf: (c) => `fast:${c.bessId}:pcs_values::grid_voltage_ca_v` },
+          ]}
+        />
+      )}
 
       {/* Faults last, and as a dense grid rather than a list: twenty-four of
           them reading "Normal" is the ordinary case, so the block should be

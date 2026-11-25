@@ -14,5 +14,5 @@ export const useSolisCentral = (gatewayId: string, limit = 1000) =>
     queryFn: () => fetchSolis(gatewayId, { limit }),
     enabled: !!gatewayId,
     staleTime: 10_000,
-    refetchInterval: 15_000,
+    refetchInterval: 30_000,
   });

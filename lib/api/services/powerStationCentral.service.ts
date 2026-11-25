@@ -642,9 +642,6 @@ export async function fetchCommStatus(gatewayId: string): Promise<CommDevice[]> 
   return [...latest.entries()]
     .filter(([assetId]) => installed.has(assetId))
     .map(([assetId, row]): CommDevice => {
-      const own = flag.get(assetId);
-      const srcId = (row.data?.source_id as string | undefined) ?? null;
-      const online = own !== undefined ? own === 1 : !!(srcId && sourceOnline.get(srcId));
       const seen = newestTs.get(assetId) ?? Date.parse(row.sample_time_utc ?? "");
       /* The Communication Lost rule (lib/alarms/commLost), so this screen,
          the Equipment tiles and the alarm agree: silent past 15 min, or three
@@ -653,6 +650,16 @@ export async function fetchCommStatus(gatewayId: string): Promise<CommDevice[]> 
       const cadence = cadenceMs(times.get(assetId) ?? []);
       const limit = cadence == null ? STALE_UNKNOWN_MS : Math.max(COMM_LOST_MS, 3 * cadence);
       const stale = row.substream !== "remote_control" && Number.isFinite(seen) && now - seen > limit;
+
+      const own = flag.get(assetId);
+      const srcId = (row.data?.source_id as string | undefined) ?? null;
+      /* Reachability: the device's own link bit when it has one, else its
+         source's health flag, else "still reporting". An asset with no link
+         register — every CleanEdge subsystem — must not read offline while its
+         data is arriving; freshness is the only link evidence there is. */
+      const online = own !== undefined ? own === 1
+        : srcId && sourceOnline.has(srcId) ? !!sourceOnline.get(srcId)
+        : Number.isFinite(seen) && !stale;
       const status: CommDevice["status"] = !online ? "offline" : stale ? "abnormal" : "online";
       return {
         id: assetId,

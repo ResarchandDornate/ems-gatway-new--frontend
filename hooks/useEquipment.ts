@@ -56,8 +56,8 @@ export const usePcsData         = (cabinetId: string, stationId: string, invN = 
 export const useBmsData         = (pileId: string,    stationId: string)   => useQuery({ queryKey: eq("bms",       pileId),          queryFn: () => fetchBmsDataCentral(pileId, stationId),          enabled: !!pileId    && !!stationId, staleTime: 15_000, refetchInterval: 30_000 });
 export const useClusterData     = (pileId: string,    stationId: string)   => useQuery({ queryKey: eq("cluster",   pileId),          queryFn: () => fetchClusterDataCentral(pileId, stationId),      enabled: !!pileId    && !!stationId, staleTime: 15_000 });
 /** Per-probe BMS temperatures for one cabinet (source id) — see fetchProbeTemps. */
-export const useProbeTemps      = (sourceId: string,  stationId: string)   => useQuery({ queryKey: eq("probes",    sourceId),        queryFn: () => fetchProbeTemps(sourceId, stationId),            enabled: !!sourceId  && !!stationId, staleTime: 30_000, refetchInterval: 60_000 });
-export const useCellData        = (rackId: string,    stationId: string)   => useQuery({ queryKey: eq("cell",      rackId),          queryFn: () => fetchCellDataCentral(rackId, stationId),         enabled: !!rackId    && !!stationId, staleTime: 30_000, refetchInterval: 60_000 });
+export const useProbeTemps      = (sourceId: string,  stationId: string)   => useQuery({ queryKey: eq("probes",    sourceId),        queryFn: () => fetchProbeTemps(sourceId, stationId),            enabled: !!sourceId  && !!stationId, staleTime: 30_000, refetchInterval: 30_000 });
+export const useCellData        = (rackId: string,    stationId: string)   => useQuery({ queryKey: eq("cell",      rackId),          queryFn: () => fetchCellDataCentral(rackId, stationId),         enabled: !!rackId    && !!stationId, staleTime: 30_000, refetchInterval: 30_000 });
 /**
  * Weak-cell drift over the stored window.
  *
@@ -202,7 +202,7 @@ export const useMeterTrace = (sourceOverride?: string) => {
     queryFn:  () => fetchMeterTrace(gatewayId, sourceId),
     enabled:  !!gatewayId && !!sourceId,
     staleTime: 30_000,
-    refetchInterval: 60_000,
+    refetchInterval: 30_000,
   });
 };
 

@@ -17,12 +17,13 @@ import {
   CHARGE_SOURCES, REPLACED_SOURCES, revenueFor, savingPerUnit,
   type ChargeSource, type ReplacedSource,
 } from "@/lib/revenue/master";
-import { useMonthlyDischarge, useRevenueMaster, useSaveRevenueMaster } from "@/hooks/useRevenueMaster";
+import { useMonthlyDischarge, useRevenueMaster, useSaveRevenueMaster, useTariffTemplates } from "@/hooks/useRevenueMaster";
 import { bestMonthKwh, istMonth } from "@/lib/revenue/monthly";
 import { useCabinetReadings, useSelectedCabinets } from "@/hooks/useDashboardCentral";
 import { sumOver } from "@/lib/api/services/dashboardCentral.service";
 import { useBessLiveCentral as useBessLive } from "@/hooks/useBessLiveCentral";
 import { fmtINRCompact } from "@/lib/format";
+import type { StateTariff, TariffSlot } from "@/lib/revenue/stateTariffs";
 
 type PeriodId = "cycle" | "day" | "month" | "year" | "lifetime";
 const PERIODS: { id: PeriodId; label: string }[] = [
@@ -46,12 +47,32 @@ const asRate = (s: string): number | null => {
 export function RevenueSettings({ station }: { station: Station }) {
   const { data: saved, isLoading, isError, error } = useRevenueMaster();
   const save = useSaveRevenueMaster();
+  const { data: templates } = useTariffTemplates();
+  const tariffFor = (name: string) => (templates ?? []).find((t) => t.state === name);
 
   const [chargeSource, setChargeSource] = useState<ChargeSource>("solar");
   const [replacedSource, setReplacedSource] = useState<ReplacedSource>("grid");
   const [chargeCost, setChargeCost] = useState("");
   const [dischargeCost, setDischargeCost] = useState("");
   const [period, setPeriod] = useState<PeriodId>("month");
+  const [stateName, setStateName] = useState("");
+
+  /* Pick a state → fill the charge value (its solar price) and a representative
+     discharge price (the base EC lifted to the evening peak slot). Both stay
+     editable; the slots are shown so where the discharge price came from is
+     visible, and whether the template is confirmed or indicative. */
+  function applyState(name: string) {
+    setStateName(name);
+    const t = tariffFor(name);
+    if (!t) return;
+    const peak = t.slots.find((s) => /peak/i.test(s.name) && !/off/i.test(s.name));
+    const disch = peak == null ? t.baseEnergyChargeRs
+      : peak.modifierRs != null ? t.baseEnergyChargeRs + peak.modifierRs
+      : Math.round(t.baseEnergyChargeRs * (1 + (peak.modifierPct ?? 0) / 100) * 100) / 100;
+    setChargeSource("solar");
+    setChargeCost(String(t.solarChargeValueRs));
+    setDischargeCost(String(disch));
+  }
 
   /* The form opens on what is saved. */
   useEffect(() => {
@@ -60,6 +81,7 @@ export function RevenueSettings({ station }: { station: Station }) {
     setReplacedSource(saved.replacedSource);
     setChargeCost(String(saved.chargeCostRs));
     setDischargeCost(String(saved.dischargeCostRs));
+    if (saved.state) setStateName(saved.state);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saved]);
 
@@ -97,13 +119,14 @@ export function RevenueSettings({ station }: { station: Station }) {
 
   const onSave = () => {
     if (!draft) return;
-    /* Any month typed in earlier is kept as it was. */
-    save.mutate({ chargeSource, replacedSource, ...draft, manualDischargeKwh: saved?.manualDischargeKwh });
+    save.mutate({ chargeSource, replacedSource, ...draft, state: stateName || undefined });
   };
 
   return (
     <div className="surface-card" style={{ padding: "var(--pad)" }}>
       <h3 className="card-title" style={{ marginBottom: 14 }}>Revenue Values</h3>
+
+      <StatePicker value={stateName} onChange={applyState} templates={templates ?? []} />
 
       {isError && (
         <div style={{ marginBottom: 12, fontSize: 12, color: "var(--red)" }}>
@@ -155,6 +178,44 @@ export function RevenueSettings({ station }: { station: Station }) {
                 : "Not Saved Yet"}
         </span>
       </div>
+    </div>
+  );
+}
+
+/** State dropdown that fills the rates from a ToD template, with the slots and
+ *  whether they are a published figure or the framework default. */
+function StatePicker({ value, onChange, templates }: { value: string; onChange: (v: string) => void; templates: StateTariff[] }) {
+  const t = value ? templates.find((x) => x.state === value) : undefined;
+  const names = templates.map((x) => x.state).sort((a, b) => a.localeCompare(b));
+  const slotMod = (s: TariffSlot) =>
+    s.modifierRs != null
+      ? `${s.modifierRs > 0 ? "+" : ""}₹${s.modifierRs.toFixed(2)}`
+      : `${(s.modifierPct ?? 0) > 0 ? "+" : ""}${s.modifierPct ?? 0}%`;
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)" }}>State</span>
+        <select className="filter-input" value={value} onChange={(e) => onChange(e.target.value)} style={{ minWidth: 220 }}
+                disabled={names.length === 0}>
+          <option value="">{names.length ? "Select a state to auto-fill…" : "Loading states…"}</option>
+          {names.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+        {t && (
+          <span className={`pill ${t.verified ? "green" : "gray"}`} style={{ fontSize: 10.5 }}>
+            <span className="dot" />{t.verified ? "Verified" : "Indicative"} · {t.financialYear}{t.discom ? ` · ${t.discom}` : ""}
+          </span>
+        )}
+      </div>
+      {t && (
+        <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {t.slots.map((s) => (
+            <span key={s.name} style={{ fontSize: 11, color: "var(--ink2)", background: "var(--surface2)", border: "1px solid var(--line)", borderRadius: 8, padding: "4px 8px" }}>
+              <b style={{ color: "var(--ink)" }}>{s.name}</b> {s.start}–{s.end} · {slotMod(s)}
+            </span>
+          ))}
+        </div>
+      )}
+      {t?.note && <div style={{ marginTop: 8, fontSize: 11, color: "var(--muted)", maxWidth: 640 }}>{t.note}</div>}
     </div>
   );
 }

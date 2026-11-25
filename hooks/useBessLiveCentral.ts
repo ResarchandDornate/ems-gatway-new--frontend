@@ -99,7 +99,7 @@ export function useBessLiveCentral(_stationId?: string): BessLiveCentralData {
     queryKey: ["central", "bessLive", gatewayId, key],
     queryFn:  () => fetchFastBess(gatewayId, { limit: 20 }),
     enabled:  ready,
-    refetchInterval: 15_000,
+    refetchInterval: 30_000,
     staleTime: 12_000,
     retry: false,
   });
@@ -121,7 +121,7 @@ export function useBessLiveCentral(_stationId?: string): BessLiveCentralData {
     queryKey: ["central", "solisSolar", gatewayId],
     queryFn:  () => fetchSolis(gatewayId, { limit: 50 }),
     enabled:  !!gatewayId,
-    refetchInterval: 15_000,
+    refetchInterval: 30_000,
     staleTime: 12_000,
     retry: false,
   });
@@ -129,7 +129,7 @@ export function useBessLiveCentral(_stationId?: string): BessLiveCentralData {
     queryKey: ["central", "controllerSolar", gatewayId],
     queryFn:  () => fetchController(gatewayId, { limit: 1 }),
     enabled:  !!gatewayId,
-    refetchInterval: 15_000,
+    refetchInterval: 30_000,
     staleTime: 12_000,
     retry: false,
   });

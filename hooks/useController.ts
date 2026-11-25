@@ -10,5 +10,5 @@ export const useController = (gatewayId: string, limit = 200) =>
     queryFn: () => fetchController(gatewayId, { limit }),
     enabled: !!gatewayId,
     staleTime: 10_000,
-    refetchInterval: 15_000,
+    refetchInterval: 30_000,
   });

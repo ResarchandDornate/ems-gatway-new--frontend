@@ -297,35 +297,50 @@ import { addS2PointId } from "./s2PointId.ts";
 
 const s2Cache = new Map<string, { at: number; p: Promise<unknown[]> }>();
 
+/* The gateway stores vendor-canonical keys (env_canonical__…, bms_canonical__…,
+   hopecombox__…, cleanedge_total__); the screens read the bare signal name. Strip the
+   known prefixes, longest first, so a tile's key matches what the stream carries. */
+const CANON_PREFIXES = [
+  "env_canonical__environment__chiller__", "env_canonical__environment__temp_humidity__",
+  "env_canonical__environment__dehumidifier__", "env_canonical__bank__system_alarm__",
+  "env_canonical__bank__system_data__", "env_canonical__environment__", "env_canonical__bank__",
+  "bms_canonical__rack_data__", "bms_canonical__", "canonical__telemetry__", "canonical__alarm__",
+  "cleanedge_total__", "hopecombox__",
+];
+const normKey = (k: string): string => {
+  for (const p of CANON_PREFIXES) if (k.startsWith(p)) return k.slice(p.length);
+  return k;
+};
+
 export function s2General(base: string, auth: string, gw: string, sub: string, signal?: AbortSignal): Promise<unknown[]> {
   const ck = `${gw}|${sub}`;
   const hit = s2Cache.get(ck);
   if (hit && Date.now() - hit.at < 20_000) return hit.p;
-  const keys = (S2_SIGNALS as Record<string, string[]>)[sub] ?? [];
-  const rows: unknown[] = [];
-  let next = 0;
-  let assets: AssetMap = { toNew: new Map(), toOld: new Map() };
-  const one = async (key: string) => {
-    const qs = new URLSearchParams({ site_id: SITE_ID(), stream: "S2", substream: sub, signal_key: key });
-    addS2PointId(qs, sub, key);   // T7: additive point_id (no-op unless enabled + resolved)
+  // One bulk snapshot per substream (backend /telemetry/snapshot) instead of one
+  // /latest call per signal — turns hundreds of round-trips into a single request.
+  const p = (async (): Promise<unknown[]> => {
+    const [assets, own] = await Promise.all([assetMap(base, auth, gw), ownedS2Tokens(base, auth, gw)]);
+    if (own.size === 0) return [];
+    const rows: unknown[] = [];
+    const qs = new URLSearchParams({ site_id: SITE_ID(), stream: "S2", substream: sub });
     try {
-      const r = await fetch(`${base}/api/v1/telemetry/latest?${qs}`, { headers: { authorization: auth, accept: "application/json" }, cache: "no-store", signal });
-      if (!r.ok) return;
-      const b = (await r.json()) as { results?: { asset_id?: string; source_id?: string; value?: number | null; time?: string; quality?: string }[] };
-      for (const p of b.results ?? []) {
-        if (!own.has(tokenOf(p.source_id))) continue;   // another gateway's source
-        rows.push({
-          substream: sub, asset_id: (p.asset_id && assets.toOld.get(p.asset_id)) ?? p.asset_id ?? null, point_id: key, signal: key,
-          value: p.value == null ? null : String(s2Value(key, p.value)), unit: null, category: null, quality: (p.quality as string) ?? "good",
-          sample_time_utc: p.time ?? null, received_at_utc: null, data: {},
-        });
+      const r = await fetch(`${base}/api/v1/telemetry/snapshot?${qs}`, { headers: { authorization: auth, accept: "application/json" }, cache: "no-store", signal });
+      if (r.ok) {
+        const b = (await r.json()) as { results?: { asset_id?: string; source_id?: string; signal_key?: string; value?: number | null; time?: string; quality?: string }[] };
+        for (const pt of b.results ?? []) {
+          if (!own.has(tokenOf(pt.source_id))) continue;   // another gateway's source
+          const key = normKey(pt.signal_key ?? "");
+          rows.push({
+            substream: sub, asset_id: (pt.asset_id && assets.toOld.get(pt.asset_id)) ?? pt.asset_id ?? null, point_id: key, signal: key,
+            value: pt.value == null ? null : String(s2Value(key, pt.value)), unit: null, category: null, quality: (pt.quality as string) ?? "good",
+            sample_time_utc: pt.time ?? null, received_at_utc: null, data: {},
+          });
+        }
       }
-    } catch { /* one signal failing must not sink the substream */ }
-  };
-  let own = new Set<string>();
-  const p = Promise.all([assetMap(base, auth, gw), ownedS2Tokens(base, auth, gw)]).then(([m, o]) => { assets = m; own = o; }).then(() => own.size === 0 ? [] : Promise.all(Array.from({ length: 24 }, async () => {
-    while (next < keys.length) await one(keys[next++]);
-  }))).then(() => rows.sort((a, b) => Date.parse(String((b as { sample_time_utc: string }).sample_time_utc)) - Date.parse(String((a as { sample_time_utc: string }).sample_time_utc))));
+    } catch { /* snapshot failure -> empty substream, as before */ }
+    rows.sort((a, b) => Date.parse(String((b as { sample_time_utc: string }).sample_time_utc)) - Date.parse(String((a as { sample_time_utc: string }).sample_time_utc)));
+    return rows;
+  })();
   s2Cache.set(ck, { at: Date.now(), p });
   return p;
 }
@@ -436,17 +451,15 @@ export const POINT_MAP: Record<string, { substream: string; key: string; scale?:
   p0183: { substream: "pcs_extended", key: "activepower_c" },
   p1023: { substream: "bms_extended", key: "rack_average_cell_voltage" },  // mV via s2Value
   /* Lifetime charge / discharge per PCS, kWh (dashboard "Charge · Lifetime",
-     Power Station "Total Charge / Discharge"). The backend's signal registry
-     names them cumulative_*_energy_kwh (source cleanhedge, T3_3Y); /telemetry
-     answers 422 "unknown signal" for any other key. As of 18 Nov 2026 the
-     Cleanedge gateway publishes them vendor-prefixed
-     (cleanedge_total__cumulative_*), which the API will not serve, so these
-     read empty until the gateway sends the registry names. */
-  p0205: { substream: "pcs_extended", key: "cumulative_charge_energy_kwh" },
-  p0206: { substream: "pcs_extended", key: "cumulative_discharge_energy_kwh" },
+     Power Station "Total Charge / Discharge"). The Cleanedge gateway publishes
+     these vendor-prefixed (cleanedge_total__cumulative_*) and the registry now
+     carries that name, so /telemetry serves them under it — the bare
+     cumulative_*_energy_kwh registry rows hold no data. */
+  p0205: { substream: "pcs_extended", key: "cleanedge_total__cumulative_charge_energy_kwh" },
+  p0206: { substream: "pcs_extended", key: "cleanedge_total__cumulative_discharge_energy_kwh" },
   /* Not an old point id: the Average Battery Temperature card reads this
      (S1 on this backend carries only the max and min). */
-  avg_cell_temperature: { substream: "bms_extended", key: "rack_average_cell_temperature" },
+  avg_cell_temperature: { substream: "bms_extended", key: "bms_canonical__rack_data__rack_average_cell_temperature" },
 };
 
 const pointRow = (asset: string, pointId: string, m: { substream: string; key: string; scale?: number }, value: number | null | undefined, time: string | null | undefined, quality?: string | null) => ({
@@ -487,7 +500,25 @@ const HIST_PATH: Record<string, string> = {
   "edge-ai": "edge-ai/history", health: "health/history",
 };
 
-export async function gatewayHistoryRows(
+const histCache = new Map<string, { at: number; p: Promise<{ ts: number; r: Record<string, unknown> }[]> }>();
+
+/* The shared period control re-reads the same window for every chart on the page,
+   so a filter change would otherwise fan the identical fetch out N times. Hold the
+   assembled rows for one poll interval: same data, read once. */
+export function gatewayHistoryRows(
+  base: string, auth: string, gw: string, stream: string,
+  from: number, to: number, step: number, bessId: string | null, signal?: AbortSignal,
+  point?: { pointId: string | null; assetId: string | null },
+): Promise<{ ts: number; r: Record<string, unknown> }[]> {
+  const ck = `${gw}|${stream}|${from}|${to}|${step}|${bessId ?? ""}|${point?.pointId ?? ""}|${point?.assetId ?? ""}`;
+  const hit = histCache.get(ck);
+  if (hit && Date.now() - hit.at < 20_000) return hit.p;
+  const p = historyRowsUncached(base, auth, gw, stream, from, to, step, bessId, signal, point);
+  histCache.set(ck, { at: Date.now(), p });
+  return p;
+}
+
+async function historyRowsUncached(
   base: string, auth: string, gw: string, stream: string,
   from: number, to: number, step: number, bessId: string | null, signal?: AbortSignal,
   point?: { pointId: string | null; assetId: string | null },
@@ -511,7 +542,7 @@ export async function gatewayHistoryRows(
     const wins: [number, number][] = [];
     for (let t = from; t < to; t += st) wins.push([t, Math.min(t + st, to)]);
     let next = 0;
-    await Promise.all(Array.from({ length: 12 }, async () => {
+    await Promise.all(Array.from({ length: 24 }, async () => {
       while (next < wins.length) {
         const [a, b] = wins[next++];
         const q = new URLSearchParams({ site_id: SITE_ID(), gateway_id: gw, limit: "1", start: new Date(a).toISOString(), stop: new Date(b).toISOString() });

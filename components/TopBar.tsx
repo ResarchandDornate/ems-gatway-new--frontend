@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bell, Volume2, VolumeX, ChevronDown, User, Users, LogOut, Sun, Moon, Activity, Settings } from "lucide-react";
+import { Bell, Volume2, VolumeX, ChevronDown, User, LogOut, Sun, Moon, Activity, Settings } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { logout, getSession, subscribe, activeSiteName } from "@/lib/central";
@@ -392,14 +392,6 @@ export function TopBar() {
                 >
                   <Settings size={13} />
                   Settings
-                </Link>
-                <Link
-                  href="/admin-users"
-                  onClick={() => setMenuOpen(false)}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 text-[12.5px] text-ink3 hover:bg-surface3 transition-colors"
-                >
-                  <Users size={13} />
-                  User Monitor
                 </Link>
                 <PushAlerts />
                 <div className="border-t border-line" />

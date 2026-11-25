@@ -21,6 +21,8 @@ export interface RevenueMaster {
   replacedSource: ReplacedSource;
   /** (B) ₹ per kWh discharged, the cost of the source it replaces. */
   dischargeCostRs: number;
+  /** The ToD template the rates were filled from, kept so the form reopens on it. */
+  state?: string;
   /**
    * Discharge typed in for months the server never recorded — those before
    * the collector kept month-end totals (lib/revenue/monthly). "YYYY-MM" → kWh,

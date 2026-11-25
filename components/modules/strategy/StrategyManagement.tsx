@@ -399,9 +399,22 @@ const STRATEGY_NAV: { key: NavKey; label: string }[] = [
   { key: "antibackflow", label: "Export Limit (Anti-Backflow)" },
 ];
 
+/* The Cleanedge site runs only Pair Control under Strategy; its other
+   controllers are not wired to this gateway yet, so they are hidden rather than
+   shown empty. Keyed by gateway id, like WIRING_ARCHIVED on the power-station
+   screen. 1545be97… = test-gw-01, cleanedge_kinetics. */
+const PAIRCONTROL_ONLY = new Set<string>([
+  "1545be97-67a4-4491-9bc8-48070fe9e607",
+]);
+
 export function StrategyManagement({ stationId }: { stationId: string }) {
-  const [activeNav, setActiveNav] = useState<NavKey>("controller");
-  const activeLabel = STRATEGY_NAV.find(i => i.key === activeNav)?.label ?? "";
+  const nav = PAIRCONTROL_ONLY.has(stationId)
+    ? STRATEGY_NAV.filter(i => i.key === "paircontrol")
+    : STRATEGY_NAV;
+  const [activeNav, setActiveNav] = useState<NavKey>(nav[0].key);
+  /* A gateway switch can leave activeNav on a tab this site does not show. */
+  const current = nav.some(i => i.key === activeNav) ? activeNav : nav[0].key;
+  const activeLabel = nav.find(i => i.key === current)?.label ?? "";
 
   return (
     <div className="page-fill" style={{ overflowY: "auto", paddingRight: 4, display: "flex", flexDirection: "column", gap: 12 }}>
@@ -412,11 +425,11 @@ export function StrategyManagement({ stationId }: { stationId: string }) {
       {/* ── Numbered submenu + content ──────────────────────────────── */}
       <div className="ps-layout">
         <nav className="ps-submenu">
-          {STRATEGY_NAV.map((item) => (
+          {nav.map((item) => (
             <button
               key={item.key}
               onClick={() => setActiveNav(item.key)}
-              className={`ps-sm-item${activeNav === item.key ? " on" : ""}`}
+              className={`ps-sm-item${current === item.key ? " on" : ""}`}
               title={item.label}
             >
               <span>{item.label}</span>
@@ -429,11 +442,11 @@ export function StrategyManagement({ stationId }: { stationId: string }) {
             <h2>{activeLabel}</h2>
           </div>
           <div className="ps-panel-body">
-            {activeNav === "controller" ? (
+            {current === "controller" ? (
               <SocControllerView gatewayId={stationId} />
-            ) : activeNav === "templates" ? (
+            ) : current === "templates" ? (
               <PolicyTemplates stationId={stationId} />
-            ) : activeNav === "schedule" ? (
+            ) : current === "schedule" ? (
               <>
                 {/* What the cabinet is actually programmed with, above what
                     somebody planned. The two are different claims and the
@@ -442,9 +455,9 @@ export function StrategyManagement({ stationId }: { stationId: string }) {
                 <DeviceSchedulePanel />
                 <PolicySchedule stationId={stationId} />
               </>
-            ) : activeNav === "paircontrol" ? (
+            ) : current === "paircontrol" ? (
               <PairControlView gatewayId={stationId} />
-            ) : activeNav === "demand" ? (
+            ) : current === "demand" ? (
               <DemandConfigPanel />
             ) : (
               <AntiBackflowView stationId={stationId} />

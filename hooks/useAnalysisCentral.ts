@@ -17,7 +17,7 @@ export function useCabinetCounters(enabled = true) {
     queryFn: () => fetchCabinetCounters(gatewayId),
     enabled: enabled && gatewayId.length > 0,
     staleTime: 55_000,
-    refetchInterval: 60_000,
+    refetchInterval: 30_000,
     retry: false,
   });
 }
@@ -30,7 +30,7 @@ export function useEmsLimits(enabled = true) {
     queryFn: () => fetchEmsLimits(gatewayId),
     enabled: enabled && gatewayId.length > 0,
     staleTime: 55_000,
-    refetchInterval: 60_000,
+    refetchInterval: 30_000,
     retry: false,
   });
 }

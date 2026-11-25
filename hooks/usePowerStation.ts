@@ -35,11 +35,11 @@ export function useStationSummary(id: string) {
     queryFn:  () => fetchStationSummaryCentral(id, sourceIds),
     enabled:  !!id,
     staleTime: 30_000,
-    refetchInterval: 60_000,
+    refetchInterval: 30_000,
   });
 }
 export const useDailyData      = (id: string, range: "7d"|"month"|"year"|"all") => useQuery({ queryKey: ps("daily", id, range), queryFn: () => fetchDailyData(id, range), enabled: !!id, staleTime: 60_000, placeholderData: keepPreviousData });
-export const useIntradayData   = (id: string)                          => useQuery({ queryKey: ps("intraday", id),   queryFn: () => fetchIntradayData(id),           enabled: !!id, staleTime: 30_000, refetchInterval: 60_000 });
+export const useIntradayData   = (id: string)                          => useQuery({ queryKey: ps("intraday", id),   queryFn: () => fetchIntradayData(id),           enabled: !!id, staleTime: 30_000, refetchInterval: 30_000 });
 export const useHistoricalPower = (id: string, startDate: string, endDate: string) =>
   useQuery({ queryKey: ps("historical", id, startDate, endDate), queryFn: () => fetchHistoricalPower(id, startDate, endDate), enabled: !!id && !!startDate && !!endDate, staleTime: 120_000 });
 export const useDailyDataCustom = (id: string, startTs: number, endTs: number, enabled = true) =>
@@ -74,11 +74,11 @@ export function useCommDevices(gatewayId: string) {
     ...commQuery(gatewayId),
     enabled:  !!gatewayId,
     staleTime: 30_000,
-    refetchInterval: 60_000,
+    refetchInterval: 30_000,
     select: (list) => (sourceIds ? list.filter((d) => sourceIds.some((id) => d.id.startsWith(`${id}_`))) : list),
   });
 }
-export const usePerInverterData   = (id: string) => useQuery({ queryKey: ps("perInverter", id),                     queryFn: () => fetchPerInverterData(id),          enabled: !!id, staleTime: 30_000, refetchInterval: 60_000 });
+export const usePerInverterData   = (id: string) => useQuery({ queryKey: ps("perInverter", id),                     queryFn: () => fetchPerInverterData(id),          enabled: !!id, staleTime: 30_000, refetchInterval: 30_000 });
 
 /* Central backend, Single Station Data. The newest ~1.5 h of S2 (every ~11 s) —
    the only window this backend can reach. useIntradayData above still points
@@ -103,7 +103,7 @@ export function usePlantTopology(gatewayId: string) {
       fetchPlantTopology(gatewayId, await qc.fetchQuery(commQuery(gatewayId)).catch(() => undefined)),
     enabled:  !!gatewayId,
     staleTime: 60_000,
-    refetchInterval: 60_000,
+    refetchInterval: 30_000,
   });
 }
 

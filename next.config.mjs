@@ -23,14 +23,21 @@ const nextConfig = {
   async headers() {
     return [
       {
-        // Never cache HTML pages — forces Cloudflare to always fetch fresh
-        // HTML from origin, which carries the latest hashed JS chunk URLs.
-        source: "/(.*)",
+        // Content-hashed build assets never change for a given URL, so cache
+        // them for a year. The blanket no-store below used to override Next's
+        // own immutable default here, which made every refresh re-download the
+        // whole JS bundle from origin through Cloudflare.
+        source: "/_next/static/:path*",
         headers: [
-          {
-            key: "Cache-Control",
-            value: "no-store, must-revalidate",
-          },
+          { key: "Cache-Control", value: "public, max-age=31536000, immutable" },
+        ],
+      },
+      {
+        // Everything else — HTML and the /api proxy — stays fresh: HTML carries
+        // the current chunk URLs, and the API is live data.
+        source: "/((?!_next/static/).*)",
+        headers: [
+          { key: "Cache-Control", value: "no-store, must-revalidate" },
         ],
       },
     ];

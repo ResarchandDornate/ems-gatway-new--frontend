@@ -24,7 +24,7 @@ export function useCabinetReadings() {
     queryKey: ["dashboard", "cabinetReadings", gatewayId],
     queryFn: () => fetchCabinetReadings(gatewayId),
     enabled: gatewayId.length > 0,
-    refetchInterval: 60_000,
+    refetchInterval: 30_000,
     staleTime: 50_000,
     retry: false,
   });
@@ -82,7 +82,7 @@ export function useS1Today() {
     queryKey: ["dashboard", "s1Today", gatewayId, all.map((c) => c.bessId).join(",")],
     queryFn: () => fetchS1Today(gatewayId, all),
     enabled: gatewayId.length > 0 && all.length > 0,
-    refetchInterval: 60_000,
+    refetchInterval: 30_000,
     staleTime: 50_000,
     retry: false,
     placeholderData: (prev) => prev,
@@ -100,7 +100,7 @@ export function useS2Recent() {
     queryKey: ["dashboard", "s2Recent", gatewayId, sourceIds.join(",")],
     queryFn: () => fetchS2Recent(gatewayId, sourceIds),
     enabled: gatewayId.length > 0 && sourceIds.length > 0,
-    refetchInterval: 60_000,
+    refetchInterval: 30_000,
     staleTime: 50_000,
     retry: false,
   });

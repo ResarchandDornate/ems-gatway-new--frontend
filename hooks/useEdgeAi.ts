@@ -24,5 +24,5 @@ export const useEdgeAiAnomalies = (gatewayId: string) =>
     queryFn: () => fetchEdgeAi(gatewayId, { limit: EDGE_AI_MAX_LIMIT, onlyAnomalies: true }),
     enabled: !!gatewayId,
     staleTime: 30_000,
-    refetchInterval: 60_000,
+    refetchInterval: 30_000,
   });

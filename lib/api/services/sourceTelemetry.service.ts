@@ -12,13 +12,19 @@
  * ── Base asset names ───────────────────────────────────────────────────────
  *
  * The readers address assets as `pcs_1`, `bms_1`, `utility_meter` — the
- * NorthBound dictionary's names. S2 reports `external_ems_1_pcs`,
- * `external_ems_1_bms`, `external_ems_1_grid_meter`. The mapping is
- * mechanical, and three of them are not identity:
+ * NorthBound dictionary's names. Two gateways feed them. NorthBound prefixes
+ * the source — `external_ems_1_pcs`, `external_ems_1_bms`,
+ * `external_ems_1_grid_meter` — and three tails are not identity:
  *
  *   pcs         → pcs_1
  *   bms         → bms_1
  *   grid_meter  → utility_meter
+ *
+ * CleanEdge reports bare, site-level ids instead — `pcs_1`, `bms_bank_1`,
+ * `liquid_cooling`, `solar_plant` — renamed per substream, because one id can
+ * be two assets across two substreams: `safety_io` is the fire panel on
+ * fire_protection, and `bms_bank_1` is the controller on ems_system but the
+ * battery on bms_extended.
  *
  * Getting this wrong is silent: every lookup misses, every figure renders as a
  * dash, and the screen looks like a plant with nothing connected rather than a
@@ -58,15 +64,36 @@ export interface SourceTelemetry {
   bessId?: string;
 }
 
-/** `external_ems_1_grid_meter` → `utility_meter`, for the given source. */
-function baseAsset(assetId: string, sourceId: string): string | null {
+/* The site-level ids CleanEdge reports. A bare id outside this set is a
+   NorthBound name for another cabinet and is dropped, so the two models never
+   cross-contaminate. */
+const SITE_ASSETS = new Set([
+  "pcs_1", "pcs_2", "pcs_3", "pcs_4",
+  "bms_bank", "bms_bank_1", "bms_bank_2", "bms_bank_3", "bms_bank_4",
+  "bms_rack_1", "bms_rack_2", "bms_rack_3", "bms_rack_4",
+  "liquid_cooling", "environment_other", "solar_plant",
+  "hvac", "safety_io", "dehumidifier_1", "dehumidifier_2",
+]);
+
+/** A reported asset id → the reader's name, or null to drop it. */
+function baseAsset(assetId: string, substream: string | null, sourceId: string): string | null {
   const prefix = `${sourceId}_`;
-  if (!assetId.startsWith(prefix)) return null;
-  const tail = assetId.slice(prefix.length);
-  if (tail === "pcs") return "pcs_1";
-  if (tail === "bms") return "bms_1";
-  if (tail === "grid_meter") return "utility_meter";
-  return tail;
+  if (assetId.startsWith(prefix)) {
+    const tail = assetId.slice(prefix.length);
+    if (tail === "pcs") return "pcs_1";
+    if (tail === "bms") return "bms_1";
+    if (tail === "grid_meter") return "utility_meter";
+    return tail;
+  }
+  if (!SITE_ASSETS.has(assetId)) return null;        // a different cabinet
+  /* Bare CleanEdge ids. The rename depends on the substream — see the header. */
+  switch (substream) {
+    case "ems_system":       return "ems_system";    // the controller's setpoints ride the bank
+    case "bms_extended":     return assetId === "bms_bank_1" || assetId === "bms_rack_1" ? "bms_1" : assetId;
+    case "dehumidifier":     return assetId === "dehumidifier_1" ? "dehumidifier" : assetId;
+    case "fire_protection":  return assetId === "safety_io" ? "fire_protection" : assetId;
+    default:                 return assetId;          // pcs_1, liquid_cooling, hvac … already the reader's name
+  }
 }
 
 export async function fetchSourceTelemetry(
@@ -93,7 +120,7 @@ export async function fetchSourceTelemetry(
   const seen = new Set<string>();
   for (const r of perSubstream.flat()) {
     if (!r.asset_id || !r.signal) continue;
-    const asset = baseAsset(r.asset_id, sourceId);
+    const asset = baseAsset(r.asset_id, r.substream, sourceId);
     if (!asset) continue;                       // a different cabinet
     const key = `${asset}.${r.signal}`;
     if (seen.has(key)) continue;

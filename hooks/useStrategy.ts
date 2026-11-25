@@ -116,7 +116,7 @@ export const useAntiBackflowConfig = () => {
     queryFn:  () => fetchAntiBackflowConfig(gatewayId, sourceId),
     enabled:  ready,
     staleTime: 30_000,
-    refetchInterval: 60_000,
+    refetchInterval: 30_000,
   });
 };
 
@@ -127,7 +127,7 @@ export const useDeviceSchedule = () => {
     queryFn:  () => fetchDeviceSchedule(gatewayId, sourceId),
     enabled:  ready,
     staleTime: 30_000,
-    refetchInterval: 60_000,
+    refetchInterval: 30_000,
   });
 };
 
@@ -138,7 +138,7 @@ export const useCabinetSetpoints = () => {
     queryFn:  () => fetchCabinetSetpoints(gatewayId, sourceId),
     enabled:  ready,
     staleTime: 30_000,
-    refetchInterval: 60_000,
+    refetchInterval: 30_000,
   });
 };
 
@@ -149,6 +149,6 @@ export const useDemandConfig = () => {
     queryFn:  () => fetchDemandConfig(gatewayId, sourceId),
     enabled:  ready,
     staleTime: 30_000,
-    refetchInterval: 60_000,
+    refetchInterval: 30_000,
   });
 };
