@@ -29,6 +29,7 @@ const BASE = (process.env.CENTRAL_BASE_URL ?? "https://bess-ems-api.unityess.clo
 const SITE_SCOPED = new Set([
   "bess", "telemetry", "health", "alarms", "controller",
   "solis", "edge-ai", "config-audit", "commands", "charge-discharge",
+  "automation-status", "automation-events",
 ]);
 
 /* Forwarded deliberately rather than by spreading the incoming headers. A blind

@@ -80,7 +80,7 @@ function splitPoint(p: MeasurementPoint) {
 
 /* Words kept upper case in a parameter's label. */
 const UPPER = new Set([
-  "soc", "soh", "bms", "pcs", "ems", "dc", "ac", "io", "pv", "igbt", "ntc", "rtc", "can", "id", "ip",
+  "soc", "soh", "bms", "pcs", "ems", "dc", "ac", "io", "pv", "igbt", "ntc", "rtc", "can", "id", "ip", "hvac",
   "mppt", "pf", "kw", "kwh", "kva", "kvar", "rms", "hv", "lv", "ups", "dsp", "arm", "cpu", "fw", "hw", "sn",
 ]);
 
@@ -90,6 +90,15 @@ function paramLabel(key: string): string {
   return key.split(/_+/).filter(Boolean).map((w) => {
     const l = w.toLowerCase();
     if (UPPER.has(l) || /^[a-z]\d+$/.test(l)) return l.toUpperCase();   // SOC, L1, P0204
+    return `${l.charAt(0).toUpperCase()}${l.slice(1)}`;
+  }).join(" ");
+}
+
+/** Asset names come space-separated (`bms bank 1`); same acronym-aware casing as paramLabel. */
+function assetLabel(name: string): string {
+  return name.split(/\s+/).filter(Boolean).map((w) => {
+    const l = w.toLowerCase();
+    if (UPPER.has(l) || /^[a-z]\d+$/.test(l)) return l.toUpperCase();
     return `${l.charAt(0).toUpperCase()}${l.slice(1)}`;
   }).join(" ");
 }
@@ -987,21 +996,32 @@ export function AssetCurve({ stationId }: { stationId: string }) {
       <div className="grid gap-3 lg:grid-cols-[200px_minmax(0,1fr)]">
         {/* Assets */}
         <nav className="surface-card p-1.5 flex flex-col gap-1 lg:max-h-[380px] lg:overflow-auto" aria-label="Assets">
-          {byCabinet.map(([source, list]) => (
-            <div key={source || "site"}>
-              <div className="text-[10px] uppercase tracking-wide text-muted px-2 pt-1 pb-0.5" title={source}>{cabinetLabel(source)}</div>
-              {list.map((a) => {
-                const on = a.id === assetId && !q;
-                return (
-                  <button key={a.id} onClick={() => chooseAsset(a.id)} aria-current={on ? "true" : undefined}
-                    className={`w-full text-left flex items-center gap-2 px-2 py-1 rounded-md text-[11.5px] border transition-colors ${on ? "border-[var(--accent)] bg-[rgb(var(--color-accent)/0.08)] text-ink font-semibold" : "border-transparent text-ink2 hover:bg-surface2/60"}`}>
-                    <span className="truncate">{a.label}</span>
-                    <span className="ml-auto text-[10px] text-muted font-mono">{a.points.length}</span>
-                  </button>
-                );
-              })}
-            </div>
-          ))}
+          {/* Column headers: the asset, and how many parameters it carries. */}
+          <div className="flex items-center gap-2 px-2 pt-1 pb-1 mb-0.5 border-b border-line text-[10px] uppercase tracking-wide text-muted">
+            <span>Parameter</span>
+            <span className="ml-auto">Numbers</span>
+          </div>
+          {byCabinet.map(([source, list]) => {
+            const groupLabel = assetLabel(cabinetLabel(source));
+            return (
+              <div key={source || "site"}>
+                {/* The generic site bucket needs no sub-header; the column header covers it. */}
+                {groupLabel.toLowerCase() !== "site" && (
+                  <div className="text-[10px] uppercase tracking-wide text-muted px-2 pt-1 pb-0.5" title={source}>{groupLabel}</div>
+                )}
+                {list.map((a) => {
+                  const on = a.id === assetId && !q;
+                  return (
+                    <button key={a.id} onClick={() => chooseAsset(a.id)} aria-current={on ? "true" : undefined}
+                      className={`w-full text-left flex items-center gap-2 px-2 py-1 rounded-md text-[11.5px] border transition-colors ${on ? "border-[var(--accent)] bg-[rgb(var(--color-accent)/0.08)] text-ink font-semibold" : "border-transparent text-ink2 hover:bg-surface2/60"}`}>
+                      <span className="truncate">{assetLabel(a.label)}</span>
+                      <span className="ml-auto text-[10px] text-muted font-mono">{a.points.length}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })}
         </nav>
 
         {/* Parameters — the chosen asset's, or the master search's matches */}

@@ -12,6 +12,7 @@ import { PolicyTemplates } from "./PolicyTemplates";
 import { PolicySchedule }  from "./PolicySchedule";
 import { SocControllerView } from "./SocControllerView";
 import { PairControlView } from "./PairControlView";
+import { AutomationView } from "./AutomationView";
 import { PageHeader } from "@/components/PageHeader";
 import { istDate } from "@/lib/api/time";
 import { downloadCsv } from "@/lib/csv";
@@ -21,7 +22,7 @@ import { timeAxisProps, timeTooltipLabel } from "@/lib/charts/timeAxis";
 import { parseIst } from "@/lib/api/time";
 import { bessLabel } from "@/lib/api/services/bessLabel";
 
-type NavKey   = "controller" | "templates" | "schedule" | "demand" | "antibackflow" | "paircontrol";
+type NavKey   = "controller" | "templates" | "schedule" | "demand" | "antibackflow" | "paircontrol" | "automation";
 type ViewMode = "chart"  | "table";
 
 const STEEL = "#5B8AB4", TEAL = "#6FA3A0", BLUE = "#3E6E93", LINE = "var(--chart-grid)";
@@ -395,6 +396,7 @@ const STRATEGY_NAV: { key: NavKey; label: string }[] = [
   { key: "templates",    label: "Charge-Discharge Policy Template" },
   { key: "schedule",     label: "Charge-Discharge Policy" },
   { key: "paircontrol",  label: "Pair Control" },
+  { key: "automation",   label: "Automation" },
   { key: "demand",       label: "Demand Management"      },
   { key: "antibackflow", label: "Export Limit (Anti-Backflow)" },
 ];
@@ -409,7 +411,7 @@ const PAIRCONTROL_ONLY = new Set<string>([
 
 export function StrategyManagement({ stationId }: { stationId: string }) {
   const nav = PAIRCONTROL_ONLY.has(stationId)
-    ? STRATEGY_NAV.filter(i => i.key === "paircontrol")
+    ? STRATEGY_NAV.filter(i => i.key === "paircontrol" || i.key === "automation")
     : STRATEGY_NAV;
   const [activeNav, setActiveNav] = useState<NavKey>(nav[0].key);
   /* A gateway switch can leave activeNav on a tab this site does not show. */
@@ -455,6 +457,8 @@ export function StrategyManagement({ stationId }: { stationId: string }) {
                 <DeviceSchedulePanel />
                 <PolicySchedule stationId={stationId} />
               </>
+            ) : current === "automation" ? (
+              <AutomationView gatewayId={stationId} />
             ) : current === "paircontrol" ? (
               <PairControlView gatewayId={stationId} />
             ) : current === "demand" ? (

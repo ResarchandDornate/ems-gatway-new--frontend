@@ -17,6 +17,8 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getSession } from "@/lib/central";
+import { usePasswordGate } from "./controlAuth";
+import { Lock, Unlock } from "lucide-react";
 
 // ── wire-up points ──────────────────────────────────────────────────────────
 // Status is the structured read already shipped (S10). Command submit is the
@@ -105,6 +107,7 @@ function Card({ eyebrow, note, children }: { eyebrow: string; note?: string; chi
 // ── view ─────────────────────────────────────────────────────────────────────
 export function PairControlView({ gatewayId }: { gatewayId: string }) {
   const { data: rows, error: statusErr } = usePairStatus(gatewayId);
+  const { requireAuth, relock, unlocked, gate } = usePasswordGate();
   /* Newest per pair: rows arrive newest first. */
   const byPair = new Map<string, PairStatus>();
   for (const r of rows ?? []) if (r.pair_id && !byPair.has(r.pair_id)) byPair.set(r.pair_id, r);
@@ -131,7 +134,7 @@ export function PairControlView({ gatewayId }: { gatewayId: string }) {
   function request(type: CommandType) {
     setErr(null); setNote(null);
     if (COMMANDS[type].needsPower && !powerOk) { setErr("Enter a power above 0 kW."); return; }
-    if (COMMANDS[type].danger) setPending(type); else void submit(type);
+    if (COMMANDS[type].danger) setPending(type); else requireAuth(() => submit(type));
   }
 
   async function submit(type: CommandType) {
@@ -192,6 +195,15 @@ export function PairControlView({ gatewayId }: { gatewayId: string }) {
           </span>
         </div>
         {statusErr && <span className="text-[11.5px]" style={{ color: "var(--red)" }}>{(statusErr as Error).message}</span>}
+        <div className="ml-auto flex items-center gap-2">
+          {unlocked ? (
+            <button onClick={relock} className="pill green" title="Controls unlocked — click to lock">
+              <Unlock size={11} /> Controls Unlocked
+            </button>
+          ) : (
+            <span className="pill gray"><Lock size={11} /> Controls Locked</span>
+          )}
+        </div>
       </div>
 
       {/* The four pairs — click to select */}
@@ -279,7 +291,7 @@ export function PairControlView({ gatewayId }: { gatewayId: string }) {
               {COMMANDS[pending].label} {pending === "safe_stop_all" ? "every pair" : pair}
               {COMMANDS[pending].needsPower ? ` at ${sign}${powerMag} kW` : ""}?
             </span>
-            <button onClick={() => submit(pending)} autoFocus
+            <button onClick={() => requireAuth(() => submit(pending))} autoFocus
               className="text-[12px] font-semibold text-[var(--red)] underline underline-offset-2 hover:opacity-80">
               Yes, Execute
             </button>
@@ -293,6 +305,7 @@ export function PairControlView({ gatewayId }: { gatewayId: string }) {
         {note && <p className="text-[11.5px] mt-3" style={{ color: "var(--accent)" }}>{note}</p>}
         {err  && <p className="text-[11.5px] mt-3" style={{ color: "var(--red)" }}>{err}</p>}
       </Card>
+      {gate}
     </div>
   );
 }
