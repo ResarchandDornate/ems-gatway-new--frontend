@@ -14,7 +14,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { CENTRAL_BASE, verifyBearer } from "@/lib/server/central/auth";
-import { GATEWAY_MODE, translate } from "@/lib/server/central/gatewayCompat";
+import { GATEWAY_MODE, translate, fastSample, SITE_ID } from "@/lib/server/central/gatewayCompat";
 import { demoFastSlices, isDemoBearer } from "@/lib/server/central/demo";
 
 export const dynamic = "force-dynamic";
@@ -63,6 +63,29 @@ export async function POST(req: NextRequest) {
       return null;
     }
   };
+
+  /* One round trip for every window: the backend's /bess/fast/slices returns the
+     newest record per window in a single query. The per-window reads below stay as
+     the fallback for a backend that does not expose it yet. Same samples either way. */
+  if (GATEWAY_MODE) {
+    try {
+      const r = await fetch(`${CENTRAL_BASE}/api/v1/bess/fast/slices?site_id=${encodeURIComponent(SITE_ID())}`, {
+        method: "POST",
+        headers: { authorization: auth!, accept: "application/json", "content-type": "application/json" },
+        body: JSON.stringify({ bess_id: bessId, windows }),
+        cache: "no-store", signal: req.signal,
+      });
+      if (r.ok) {
+        const body = (await r.json()) as { results?: unknown };
+        const results = body?.results;
+        if (Array.isArray(results) && results.length === windows.length) {
+          const mapped = results.map((recs) =>
+            Array.isArray(recs) ? (recs as Record<string, unknown>[]).map(fastSample) : []);
+          return NextResponse.json(mapped, { headers: { "cache-control": "no-store" } });
+        }
+      }
+    } catch { /* fall through to the per-window reads */ }
+  }
 
   const out: (unknown[] | null)[] = new Array(windows.length).fill(null);
   let next = 0;
