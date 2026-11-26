@@ -676,14 +676,15 @@ export function PerStation({ station }: { station: Station }) {
           { label: "Min", color: "var(--accent-2)", combine: "min", tagOf: (c) => `fast:${c.bessId}:bms_values::battery_min_temperature` },
         ]}
       />
-      {/* Measured per-phase active power (PCS p0181–p0183), summed over the
-          selected BESS. */}
+      {/* Line voltage AB / BC / CA over time, combined across the selected BESS.
+          Off the 1 s fast stream (grid_voltage_*_v) — CleanEdge does not report
+          per-phase active power, so this card carries the line voltages. */}
       <MultiSeriesPeriodCard
-        title="Power Per Phase" cabinets={selected} unit="kW" signed
+        title="Line Voltage" cabinets={selected} unit="V"
         specs={[
-          { label: "Phase A", color: series("primary").stroke, combine: "sum", tagOf: (c) => `${c.sourceId}_pcs::p0181` },
-          { label: "Phase B", color: series("secondary").stroke, combine: "sum", tagOf: (c) => `${c.sourceId}_pcs::p0182` },
-          { label: "Phase C", color: "var(--green)", combine: "sum", tagOf: (c) => `${c.sourceId}_pcs::p0183` },
+          { label: "AB", color: series("primary").stroke, combine: "max", tagOf: (c) => `fast:${c.bessId}:pcs_values::grid_voltage_ab_v` },
+          { label: "BC", color: series("secondary").stroke, combine: "max", tagOf: (c) => `fast:${c.bessId}:pcs_values::grid_voltage_bc_v` },
+          { label: "CA", color: "var(--green)", combine: "max", tagOf: (c) => `fast:${c.bessId}:pcs_values::grid_voltage_ca_v` },
         ]}
       />
     </div>
