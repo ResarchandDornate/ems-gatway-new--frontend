@@ -223,10 +223,14 @@ function Stat({ label, value }: { label: string; value: number }) {
    Three steps: (1) site + capacities + comms, (2) the customer phone that
    becomes their OTP login, (3) create + show the gateway credentials once.
    Nothing is written until "Create" on step 2. */
+type TariffSlot = { name: string; start: string; end: string; modifier_pct?: number | null; modifier_rs?: number | null };
+type TariffTemplate = { state: string; base_energy_charge_rs: number; solar_charge_value_rs: number; slots: TariffSlot[] };
+
 type Form = {
   company: string; siteName: string; address: string;
   latitude: string; longitude: string;
   solar: string; voltage: string; battery: string; pcs: string;
+  state: string; pincode: string;
   comms: Record<string, boolean>;
   phone: string; email: string;
 };
@@ -234,6 +238,7 @@ type Form = {
 const EMPTY: Form = {
   company: "", siteName: "", address: "", latitude: "", longitude: "",
   solar: "", voltage: "", battery: "", pcs: "",
+  state: "", pincode: "",
   comms: Object.fromEntries(COMMS.map((c) => [c.key, false])),
   phone: "", email: "",
 };
@@ -249,6 +254,10 @@ function AddSiteWizard({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [creds, setCreds] = useState<{ clientId: string; clientSecret: string; gatewayKey: string } | null>(null);
+  const [templates, setTemplates] = useState<TariffTemplate[]>([]);
+  useEffect(() => {
+    authed("financials/tariff-templates").then((r) => (r.ok ? r.json() : [])).then(setTemplates).catch(() => {});
+  }, [authed]);
   const set = (k: keyof Form, v: string) => setF((p) => ({ ...p, [k]: v }));
 
   const toNum = (s: string) => (s.trim() === "" ? null : Number(s));
@@ -282,6 +291,7 @@ function AddSiteWizard({
           latitude: toNum(f.latitude), longitude: toNum(f.longitude),
           solar_capacity_kw: toNum(f.solar), connection_voltage_kv: toNum(f.voltage),
           battery_capacity_kwh: toNum(f.battery), pcs_capacity_kw: toNum(f.pcs),
+          state: f.state || null, pincode: f.pincode.trim() || null,
           ...Object.fromEntries(COMMS.map((c) => [c.key, !!f.comms[c.key]])),
         }),
       });
@@ -295,6 +305,27 @@ function AddSiteWizard({
       if (!rg.ok) throw new Error(await msg(rg, "mint gateway credentials"));
       const g = await rg.json();
       setCreds({ clientId: g.client_id, clientSecret: g.client_secret, gatewayKey });
+
+      // 4. auto-generate the revenue config from the chosen state's tariff (best-effort; the site
+      //    is already created, so a revenue hiccup must not fail the whole registration).
+      if (f.state) {
+        const t = templates.find((x) => x.state === f.state);
+        if (t) {
+          const peak = t.slots.find((sl) => /peak/i.test(sl.name) && !/off/i.test(sl.name));
+          const disch = !peak ? t.base_energy_charge_rs
+            : peak.modifier_rs != null ? t.base_energy_charge_rs + peak.modifier_rs
+            : Math.round(t.base_energy_charge_rs * (1 + (peak.modifier_pct ?? 0) / 100) * 100) / 100;
+          await authed(`financials/revenue-config?gateway_id=${encodeURIComponent(g.id)}`, {
+            method: "POST",
+            body: JSON.stringify({
+              state: t.state, charge_source: "solar", charge_cost_rs: t.solar_charge_value_rs,
+              replaced_source: "grid", discharge_cost_rs: disch,
+              base_energy_charge_rs: t.base_energy_charge_rs, solar_charge_value_rs: t.solar_charge_value_rs,
+              slots: t.slots,
+            }),
+          }).catch(() => {});
+        }
+      }
       setStep(3);
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : "Registration failed.");
@@ -327,6 +358,25 @@ function AddSiteWizard({
               <Field label="Connection voltage (kV)" value={f.voltage} onChange={(v) => set("voltage", v)} />
               <Field label="Battery capacity (kWh)" value={f.battery} onChange={(v) => set("battery", v)} />
               <Field label="PCS capacity (kW)" value={f.pcs} onChange={(v) => set("pcs", v)} />
+              <label className="block col-span-2">
+                <span className="block text-[11px] text-muted mb-1">State (auto-fills revenue tariff)</span>
+                <select value={f.state} onChange={(e) => set("state", e.target.value)}
+                        className="w-full px-3 py-2 rounded-md bg-surface border border-line text-[13px] text-ink">
+                  <option value="">{templates.length ? "Select a state…" : "Loading states…"}</option>
+                  {[...templates].sort((a, b) => a.state.localeCompare(b.state)).map((t) => (
+                    <option key={t.state} value={t.state}>{t.state}</option>
+                  ))}
+                </select>
+                {(() => {
+                  const t = f.state ? templates.find((x) => x.state === f.state) : undefined;
+                  return t ? (
+                    <span className="block text-[10.5px] text-muted mt-1">
+                      Base energy ₹{t.base_energy_charge_rs}/kWh · solar ₹{t.solar_charge_value_rs}/kWh — revenue config auto-created on save.
+                    </span>
+                  ) : null;
+                })()}
+              </label>
+              <Field label="Pincode" value={f.pincode} onChange={(v) => set("pincode", v)} />
               <div className="col-span-2 mt-1">
                 <div className="text-[11px] text-muted mb-1.5">Communication mappings</div>
                 <div className="flex flex-wrap gap-1.5">
