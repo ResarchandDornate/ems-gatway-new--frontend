@@ -32,6 +32,8 @@ const TABS: { label: string; path: string }[] = [
   // Analysis — archived for now (hidden from the nav; the page code is kept).
   // { label: "Analysis",               path: "/data-analysis" },
   { label: "Strategy",                  path: "/strategy" },
+  /* Super-admin only; the page itself gates on the admin backend (site:manage). */
+  { label: "Site Config",               path: "/site-config" },
   /* Gateway Health is NOT here. It describes the backend link rather than the
      plant, so it lives in the account menu below, next to the identity it
      belongs with, rather than competing with the monitoring tabs. */

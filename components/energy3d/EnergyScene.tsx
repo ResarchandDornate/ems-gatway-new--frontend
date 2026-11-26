@@ -191,6 +191,9 @@ export function EnergyScene({ assets }: { assets: SiteAsset[] }) {
    * plainly discharging into the bus. On a bus that pairing is not needed.
    */
   const feeders = useMemo(() => {
+    const statusOf: Record<string, string | undefined> = {
+      grid: grid.status, solar: solar.status, bess: bess.status, load: load.status,
+    };
     const raw: Array<{ id: NodeId; value: number | null; outOfBus: boolean }> = [
       { id: "grid", value: grid.power, outOfBus: (grid.power ?? 0) < 0 },
       { id: "solar", value: solar.power, outOfBus: false },
@@ -205,8 +208,10 @@ export function EnergyScene({ assets }: { assets: SiteAsset[] }) {
         outOfBus: f.outOfBus,
         power: Math.abs(f.value ?? 0),
         active: f.value != null && Math.abs(f.value) >= FLOW_EPSILON_KW,
+        /* Energized but idle: its asset is reporting, even at zero power. */
+        online: !!statusOf[f.id] && statusOf[f.id] !== "offline",
       }));
-  }, [grid.power, solar.power, bess.power, load.power, nodes]);
+  }, [grid.power, solar.power, bess.power, load.power, grid.status, solar.status, bess.status, load.status, nodes]);
 
   /**
    * Flow along the bus itself, so power can be followed from the feeder it
@@ -273,16 +278,16 @@ export function EnergyScene({ assets }: { assets: SiteAsset[] }) {
       {p.floor !== null && (
         <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
           <planeGeometry args={[140, 140]} />
-          <meshStandardMaterial color={p.floor} roughness={0.95} metalness={0.08} />
+          <meshStandardMaterial color="#B7D488" roughness={1} metalness={0} />
         </mesh>
       )}
       {/* A gridHelper's material is a LineBasicMaterial; reach into it rather
           than replacing it with a mesh material that lines cannot use. */}
       <gridHelper
-        args={[140, 112, p.gridLine, p.gridLine]}
+        args={[140, 56, "#9CBE6C", "#9CBE6C"]}
         position={[0, 0.004, 0]}
         material-transparent
-        material-opacity={p.gridOpacity}
+        material-opacity={0.22}
       />
 
       {/* Softens the seat of every pad — cheaper and prettier than shadow alone. */}
@@ -313,6 +318,7 @@ export function EnergyScene({ assets }: { assets: SiteAsset[] }) {
           reverse={r.reverse}
           peak={peak}
           muted={snapshot.stale}
+          standby={feeders.some((f) => f.online)}
         />
       ))}
       {feeders.map((f) => (
@@ -324,6 +330,7 @@ export function EnergyScene({ assets }: { assets: SiteAsset[] }) {
           reverse={f.outOfBus}
           peak={peak}
           muted={snapshot.stale}
+          standby={f.online}
         />
       ))}
 
@@ -445,9 +452,8 @@ export function EnergyScene({ assets }: { assets: SiteAsset[] }) {
         makeDefault
         target={HOME_TARGET.toArray() as [number, number, number]}
         enablePan={false}
-        enableZoom
-        minZoom={22}
-        maxZoom={120}
+        enableZoom={false}
+        enableRotate={false}
         // Held near the reference's eye level: free orbit would lose the
         // isometric read that makes the composition legible in the first place.
         minPolarAngle={Math.PI / 5}

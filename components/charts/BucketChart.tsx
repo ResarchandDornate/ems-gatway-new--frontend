@@ -15,6 +15,7 @@
  * the figures only.
  */
 
+import type { ReactNode } from "react";
 import { ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceArea } from "recharts";
 import type { BucketValue, Kind, Period } from "@/lib/charts/period";
 import { PLOT_MARGIN, rangeTicks, zeroBasedTicks, tickLabel, xAxis, yAxis } from "@/lib/charts/axes";
@@ -172,6 +173,20 @@ export function BucketChart({ buckets, kind, color, unit, period, height = 240, 
   );
 }
 
+
+/** When a period has more buckets than fit a narrow card (a day's hours, a
+ *  month's dates), the strip keeps a minimum width per bucket and scrolls
+ *  horizontally inside the card with no visible scrollbar (.no-scrollbar).
+ *  Few buckets fill the card as before, with no scroll. */
+function ScrollPlot({ count, children }: { count: number; children: ReactNode }) {
+  const minW = count > 10 ? count * 36 : 0;
+  return (
+    <div className="no-scrollbar" style={{ overflowX: "auto", overflowY: "hidden" }}>
+      <div style={{ width: "100%", minWidth: minW ? `${minW}px` : undefined }}>{children}</div>
+    </div>
+  );
+}
+
 export interface BarSeries { key: string; name: string; color: string }
 
 /**
@@ -191,12 +206,18 @@ export function BucketBars<T extends { label: string }>({ rows, series, unit, pe
   /* One bucket's figures: the tooltip, and the box mirrored onto this chart when another is hovered. */
   const tip = (r: Record<string, unknown>) => {
     const shown = series.filter((s) => typeof r[s.key] === "number");
+    const head = typeof r.label === "string" ? (period.range === "day" ? `${r.label}:00` : r.label) : "";
     return (
       <div style={tooltipStyle}>
         {/* Which bar: the hour, day or month it stands for. */}
-        {typeof r.label === "string" && <div style={{ fontWeight: 600, marginBottom: 2 }}>{r.label}</div>}
+        {typeof r.label === "string" && <div style={{ fontWeight: 600, marginBottom: 4 }}>{head}</div>}
         {shown.length === 0 ? <div>No Data</div>
-          : shown.map((s) => <div key={s.key}>{s.name} {fmt(r[s.key] as number)}</div>)}
+          : shown.map((s) => (
+            <div key={s.key} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ width: 8, height: 8, borderRadius: 999, background: s.color, flex: "0 0 auto" }} />
+              <span>{s.name} {fmt(r[s.key] as number)}</span>
+            </div>
+          ))}
       </div>
     );
   };
@@ -206,10 +227,11 @@ export function BucketBars<T extends { label: string }>({ rows, series, unit, pe
   return (
     <div style={{ position: "relative" }} data-chart>
       <AxisUnit unit={unit} />
-      <ResponsiveContainer width="100%" height={height}>
+      <ScrollPlot count={rows.length}>
+        <ResponsiveContainer width="100%" height={height}>
         <ComposedChart data={rows} margin={PLOT_MARGIN} barCategoryGap={rows.length > 14 ? "18%" : "30%"} barGap={2} {...handlers}>
           <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
-          <XAxis {...xFor(rows.length)} />
+          <XAxis {...xFor(rows.length)} tickFormatter={period.range === "day" ? (v: string) => `${v}:00` : undefined} />
           <YAxis {...yAxis} domain={[0, ticks[ticks.length - 1]]} ticks={ticks} tickFormatter={tickLabel} />
           {shaded != null && <ReferenceArea x1={shaded} x2={shaded} {...SHADE} ifOverflow="visible" />}
           <Tooltip
@@ -226,6 +248,7 @@ export function BucketBars<T extends { label: string }>({ rows, series, unit, pe
           {shadedRow && <ReferenceArea x1={shaded!} x2={shaded!} fillOpacity={0} stroke="none" ifOverflow="visible" label={ghostLabel(tip(shadedRow), flip)} />}
         </ComposedChart>
       </ResponsiveContainer>
+      </ScrollPlot>
     </div>
   );
 }

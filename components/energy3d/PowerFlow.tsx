@@ -48,6 +48,8 @@ export interface PowerFlowProps {
    * but slower and dimmer, so a stale flow cannot be mistaken for a live one.
    */
   muted?: boolean;
+  /** Online but idle: show a faint, slow standby trickle so the link reads as energized. */
+  standby?: boolean;
 }
 
 /** Chevrons per world unit at full scale. Tuned so a busy run reads as a stream. */
@@ -73,6 +75,7 @@ export function PowerFlow({
   peak = null,
   color,
   muted = false,
+  standby = false,
 }: PowerFlowProps) {
   const p = useScenePalette();
   const tint = color ?? p.cyan;
@@ -97,7 +100,8 @@ export function PowerFlow({
     // teleport the pattern forward by however long the user was away.
     const dt = Math.min(delta, 0.1);
 
-    const target = active && power > 0 ? (muted ? 0.45 : 1) : 0;
+    const flowing = active && power > 0;
+    const target = flowing ? (muted ? 0.45 : 1) : standby ? 0.14 : 0;
     const step = dt / FADE_SECONDS;
     presence.current += THREE.MathUtils.clamp(target - presence.current, -step, step);
     const presenceNow = presence.current;
@@ -123,7 +127,9 @@ export function PowerFlow({
     }
 
     // Normalise against the busiest flow on site so magnitude is comparative.
-    const scale = peak && peak > 0 ? THREE.MathUtils.clamp(power / peak, 0.08, 1) : 1;
+    const scale = flowing
+      ? (peak && peak > 0 ? THREE.MathUtils.clamp(power / peak, 0.08, 1) : 1)
+      : 0.12;
 
     const count = THREE.MathUtils.clamp(
       Math.round(length * MAX_DENSITY * scale),
@@ -132,7 +138,7 @@ export function PowerFlow({
     );
     mesh.count = count;
 
-    const speed = (MIN_SPEED + (MAX_SPEED - MIN_SPEED) * scale) * (muted ? 0.4 : 1);
+    const speed = (MIN_SPEED + (MAX_SPEED - MIN_SPEED) * scale) * (muted ? 0.4 : flowing ? 1 : 0.5);
     phase.current = (phase.current + (dt * speed) / length) % 1;
 
     for (let i = 0; i < count; i++) {

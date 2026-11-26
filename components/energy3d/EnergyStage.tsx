@@ -85,7 +85,15 @@ export function EnergyStage({ source, kind, className, overlay, minHeight = 320,
             shadows="soft"
             dpr={[1, 1.75]}
             gl={{ antialias: true, alpha: true }}
-            style={{ background: "#ffffff", borderRadius: 12 }}
+            style={{
+              // Sun glow (warm, top-right) fading into a soft blue sky, behind the
+              // transparent WebGL canvas. Pure CSS: the plant, flow and shadows are untouched.
+              background: [
+                "radial-gradient(circle at 80% 15%, #fff8d4 0%, #ffeca8 4%, rgba(255,224,150,0.40) 11%, rgba(255,224,150,0) 27%)",
+                "linear-gradient(to bottom, #9ec8f2 0%, #bbdcf6 42%, #d9ecf7 74%, #e9f3ef 100%)",
+              ].join(", "),
+              borderRadius: 12,
+            }}
           >
             <Suspense fallback={null}>
               <Exposure />

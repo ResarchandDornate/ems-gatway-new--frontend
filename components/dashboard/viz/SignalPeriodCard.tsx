@@ -33,9 +33,8 @@ function gapFor(rows: { ts: number }[]): number {
   return Math.max(GAP_MS, (steps[Math.floor(steps.length / 2)] ?? 0) * 5);
 }
 
-const roleOf = (i: number) => (i % 2 === 0 ? "primary" : "secondary") as "primary" | "secondary";
 
-function SignalPeriodCardView({ title, cabinets, signal, group = "bms_values", unit, decimals = 1, domain, signed = false, tagOf }: {
+function SignalPeriodCardView({ title, cabinets, signal, group = "bms_values", unit, decimals = 1, domain, signed = false, tagOf, color }: {
   title: string;
   /** Overrides the fast-stream tag, e.g. an S2 point (`<asset>::<point>`). */
   tagOf?: (c: Cabinet) => string;
@@ -49,6 +48,8 @@ function SignalPeriodCardView({ title, cabinets, signal, group = "bms_values", u
   domain?: [number, number];
   /** Keeps 0 in view and centred (current: − charge / + discharge). */
   signed?: boolean;
+  /** Line + swatch colour; each card a different one. Defaults to the primary series. */
+  color?: string;
 }) {
   const { nav, shared } = useCardPeriod("day");
   const swipe = useSwipe(nav);
@@ -59,8 +60,28 @@ function SignalPeriodCardView({ title, cabinets, signal, group = "bms_values", u
   );
   const loading = hist.some((q) => q.isLoading);
   const key = hist.map((q) => `${q.data?.length ?? -1}:${q.dataUpdatedAt}`).join("|");
+  const lineColor = color ?? series("primary").stroke;
 
-  /* One series per BESS, oldest first, broken where readings stop. */
+  /* One line: the mean across the selected BESS at each sampled time. The
+     cabinets read the same windows, so points align; where only some report a
+     time, the mean is over those present. */
+  const avg = useMemo(() => {
+    const byTs = new Map<number, number[]>();
+    for (const q of hist) {
+      for (const e of q.data ?? []) {
+        const ts = Date.parse(e.t);
+        if (Number.isNaN(ts) || ts < period.from || ts >= period.to) continue;
+        if (e.value == null || !Number.isFinite(e.value)) continue;
+        const arr = byTs.get(ts); if (arr) arr.push(e.value); else byTs.set(ts, [e.value]);
+      }
+    }
+    const pts: Pt[] = [...byTs.entries()].sort((a, b) => a[0] - b[0])
+      .map(([ts, vs]) => ({ ts, v: vs.reduce((a, b) => a + b, 0) / vs.length }));
+    return withGaps(pts, gapFor(pts));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, period.from, period.to]);
+
+  /* Per-BESS series too, for the readings row's per-unit values. */
   const lines = useMemo(() => hist.map((q) => {
     const pts: Pt[] = (q.data ?? [])
       .map((e) => ({ ts: Date.parse(e.t), v: e.value }))
@@ -70,7 +91,7 @@ function SignalPeriodCardView({ title, cabinets, signal, group = "bms_values", u
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [key, period.from, period.to]);
 
-  const all = lines.flat();
+  const all = avg;
   const vals = all.map((p) => p.v).filter((v): v is number => v != null && Number.isFinite(v));
   const rawTicks = domain
     /* A fixed range in five even steps: 0–50 °C reads 0, 10 … 50. */
@@ -84,9 +105,13 @@ function SignalPeriodCardView({ title, cabinets, signal, group = "bms_values", u
   /* The newest value per BESS for the readings row — or, while any chart
      on the page is hovered, each BESS's value at that moment (HoverSync). */
   const { hover, own, publish, clear } = useHoverSync();
-  const gaps = lines.map((l) => gapFor(l.filter((x) => x.v != null)));
-  const newest = lines.map((l, i) => {
-    if (hover) return valueIn(l, hover, gaps[i]);
+  const gap = gapFor(avg.filter((x) => x.v != null));
+  const newest: number | null = hover
+    ? valueIn(avg, hover, gap)
+    : (() => { for (let k = avg.length - 1; k >= 0; k--) if (avg[k].v != null) return avg[k].v as number; return null; })();
+  const perGaps = lines.map((l) => gapFor(l.filter((x) => x.v != null)));
+  const perBess = lines.map((l, i) => {
+    if (hover) return valueIn(l, hover, perGaps[i]);
     for (let k = l.length - 1; k >= 0; k--) if (l[k].v != null) return l[k].v as number;
     return null;
   });
@@ -98,10 +123,14 @@ function SignalPeriodCardView({ title, cabinets, signal, group = "bms_values", u
       {!shared && <PeriodNav state={nav} />}
       <ReadingsRow>
         <HoverStamp hover={hover} />
+        {cabinets.length > 1 && (
+          <Reading swatch={lineColor} label="Average"
+            value={newest == null ? "—" : `${newest.toFixed(decimals)} ${unit}`} />
+        )}
         {cabinets.map((c, i) => (
-          <Reading key={c.bessId} swatch={series(roleOf(i)).stroke}
+          <Reading key={c.bessId} swatch={lineColor}
             label={cabinets.length > 1 ? c.label : "Now"}
-            value={newest[i] == null ? "—" : `${newest[i]!.toFixed(decimals)} ${unit}`} />
+            value={perBess[i] == null ? "—" : `${perBess[i]!.toFixed(decimals)} ${unit}`} />
         ))}
       </ReadingsRow>
       <div className="chart-body" {...swipe} style={{ ...swipe.style, position: "relative" }}>
@@ -115,25 +144,23 @@ function SignalPeriodCardView({ title, cabinets, signal, group = "bms_values", u
             {/* Another chart's hovered moment: its instant, or its bar's span. */}
             {mark && mark.from === mark.to && <ReferenceLine x={mark.from} stroke={cursorStyle.stroke} strokeDasharray={cursorStyle.strokeDasharray} ifOverflow="hidden" />}
             {mark && mark.from !== mark.to && <ReferenceArea x1={mark.from} x2={mark.to} fill={chartTokens.grid} fillOpacity={0.5} stroke="none" ifOverflow="hidden" />}
-            {mark && mark.from === mark.to && cabinets.map((c, i) => newest[i] != null && (
-              <ReferenceDot key={c.bessId} x={mark.from} y={newest[i]!} r={4} fill={series(roleOf(i)).stroke} stroke="var(--surface, #fff)" strokeWidth={1.5} ifOverflow="hidden" />
-            ))}
-            {/* Each BESS's own reading nearest the hovered time. */}
+            {mark && mark.from === mark.to && newest != null && (
+              <ReferenceDot x={mark.from} y={newest} r={4} fill={lineColor} stroke="var(--surface, #fff)" strokeWidth={1.5} ifOverflow="hidden" />
+            )}
+            {/* The average nearest the hovered time. */}
             <Tooltip cursor={cursorStyle} content={(p) => (
               <NearestTooltip active={p.active} label={p.label as number | undefined}
-                maxGapMs={Math.max(...gaps)}
+                maxGapMs={gap}
                 fmt={(v) => v.toFixed(decimals)}
-                lines={cabinets.map((c, i) => ({ name: cabinets.length > 1 ? c.label : title, color: series(roleOf(i)).stroke, unit, data: lines[i] }))} />
+                lines={[{ name: cabinets.length > 1 ? "Average" : title, color: lineColor, unit, data: avg }]} />
             )} />
-            {cabinets.map((c, i) => (
-              <Line key={c.bessId} data={lines[i]} dataKey="v" type="monotone"
-                name={cabinets.length > 1 ? c.label : title}
-                stroke={series(roleOf(i)).stroke} strokeWidth={2} dot={false} isAnimationActive={false}
-                activeDot={{ r: 4 }} />
-            ))}
-            {mark && ghostMark(mark, span, hoverStamp(mark), cabinets.flatMap((c, i) => newest[i] == null ? [] : [{
-              name: cabinets.length > 1 ? c.label : title, color: series(roleOf(i)).stroke, value: `${newest[i]!.toFixed(decimals)} ${unit}`,
-            }]))}
+            <Line data={avg} dataKey="v" type="monotone"
+              name={cabinets.length > 1 ? "Average" : title}
+              stroke={lineColor} strokeWidth={2} dot={false} isAnimationActive={false}
+              activeDot={{ r: 4 }} />
+            {mark && ghostMark(mark, span, hoverStamp(mark), newest == null ? [] : [{
+              name: cabinets.length > 1 ? "Average" : title, color: lineColor, value: `${newest.toFixed(decimals)} ${unit}`,
+            }])}
           </LineChart>
         </ResponsiveContainer>
       </div>

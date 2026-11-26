@@ -37,7 +37,7 @@ import { PowerPeriodCard, SocPeriodCard } from "./viz/PeriodCurves";
 import Link from "next/link";
 
 import { useNow } from "@/lib/charts/stable";
-import { ActiveAlarms, activeAlarmFilters } from "./ActiveAlarms";
+import { activeAlarmFilters } from "./ActiveAlarms";
 import { Wifi, WifiOff } from "lucide-react";
 import { SITE_OVERLAY_FOR } from "@/lib/api/overlay/stations";
 import { useCabinetReadings, useS1Today, useS1Windows, useS2Recent, useSelectedCabinets } from "@/hooks/useDashboardCentral";
@@ -213,6 +213,11 @@ type StatusRow = { label: string; online: boolean | null; at?: number | null };
 /** Average cell temperature on the site-scoped backend: S2, not S1 (gatewayCompat POINT_MAP). */
 const avgTempTag = (c: { sourceId: string }) => `${c.sourceId}_bms::avg_cell_temperature`;
 
+/* Vivid status colours for the online/offline read — clearer than the muted
+   house --green/--red, which wash out on the dark card. */
+const STATUS_OK = "#2EC27E";
+const STATUS_BAD = "#F0564A";
+
 function SystemStatus({ rows, asOf }: { rows: StatusRow[] | null; asOf?: number | null }) {
   /* Stale when the site itself is not live (the badge's verdict), or when
      these flags are older than STATUS_FRESH_MS. Stale rows keep the state they
@@ -226,7 +231,7 @@ function SystemStatus({ rows, asOf }: { rows: StatusRow[] | null; asOf?: number 
     ? new Date(stamp).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false })
     : null;
   return (
-    <div className="surface-card" style={{ padding: "var(--pad-sm) var(--pad)" }}>
+    <div className="surface-card dash-grow" style={{ padding: "var(--pad-sm) var(--pad)" }}>
       <h3 className="card-title" style={{ marginBottom: 6, display: "flex", justifyContent: "space-between", gap: 8 }}>
         <span>System Status</span>
         {when && <span style={{ fontSize: 10, fontWeight: 400, color: "var(--muted)" }}>Captured {when}</span>}
@@ -248,14 +253,14 @@ function SystemStatus({ rows, asOf }: { rows: StatusRow[] | null; asOf?: number 
               still reads for someone who cannot separate the red from the ink —
               a struck-through aerial is not a colour. */}
           {bad
-            ? <WifiOff size={13} strokeWidth={2} style={{ flex: "0 0 auto", color: "var(--red)" }} />
-            : <Wifi size={13} strokeWidth={2} style={{ flex: "0 0 auto", color: online == null ? "var(--line)" : "var(--muted)" }} />}
-          <span style={{ flex: 1, minWidth: 0, fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap" }}>
+            ? <WifiOff size={13} strokeWidth={2} style={{ flex: "0 0 auto", color: STATUS_BAD }} />
+            : <Wifi size={13} strokeWidth={2} style={{ flex: "0 0 auto", color: online == null ? "var(--line)" : STATUS_OK }} />}
+          <span style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: "var(--ink)", whiteSpace: "nowrap" }}>
             {label}
           </span>
           <span style={{
             fontSize: stale ? 12 : 13, fontWeight: stale ? 500 : 700, whiteSpace: "nowrap",
-            color: online == null ? "var(--muted)" : bad ? "var(--red)" : stale ? "var(--muted)" : "var(--ink)",
+            color: online == null ? "var(--muted)" : bad ? STATUS_BAD : stale ? "var(--muted)" : STATUS_OK,
           }}>
             {word}
           </span>
@@ -435,6 +440,23 @@ export function PerStation({ station }: { station: Station }) {
       at: ats.some((a) => a == null) ? null : Math.min(...(ats as number[])),
     }];
   });
+
+  /* A row per selected BESS unit in the same System Status card: online when
+     the cabinet's PCS link reports online in its latest fast sample, and
+     Communication Lost when that cabinet has gone quiet (its own last sample,
+     not the site's). Same signal the PCS subsystem row aggregates. */
+  const bessRows: StatusRow[] = selected.map((c) => {
+    const s = windows?.[c.bessId]?.[0];
+    const t = s?.sample_time_utc ? Date.parse(s.sample_time_utc) : NaN;
+    return {
+      label: c.label,
+      online: s1Flag(windows, c.bessId, "pcs_online_status", Infinity),
+      at: Number.isNaN(t) ? null : t,
+    };
+  });
+  /* BESS units first, then the shared subsystems, in the one card. Null only
+     while the device roster is still loading. */
+  const statusRows: StatusRow[] | null = subsystems == null ? null : [...bessRows, ...subsystems];
 
   /* Keyed on the joined ids: `selected` is a fresh array every render. */
   const bessKey = bessIds.join(",");
@@ -631,16 +653,8 @@ export function PerStation({ station }: { station: Station }) {
             this screen, so if it is wanted back it needs a home of its own rather
             than a corner of the status card.
           */}
-          <SystemStatus rows={subsystems} asOf={live.lastTs} />
+          <SystemStatus rows={statusRows} asOf={live.lastTs} />
 
-          {/*
-            Fills the rest of the rail with something worth reading. The hero
-            strip counts alarms but never names them, so the count was a prompt
-            to navigate elsewhere; this answers it in place. `.dash-grow` lets
-            it absorb the leftover rail height — a list is the one card shape
-            that reads correctly when it is tall.
-          */}
-          <ActiveAlarms stationId={station.id} />
         </div>
       </div>
 
@@ -660,10 +674,10 @@ export function PerStation({ station }: { station: Station }) {
     {/* ── Second chart row ── below the one-screen grid, so the dashboard
         scrolls to it rather than squeezing every chart to fit. */}
     <div className="dash-charts" style={{ marginTop: "var(--gap)", paddingBottom: "var(--gap)" }}>
-      <SignalPeriodCard title="State Of Health" cabinets={selected} signal="soh" unit="%" domain={[0, 100]} />
+      <SignalPeriodCard title="State Of Health" cabinets={selected} signal="soh" unit="%" domain={[0, 100]} color={series("primary").stroke} />
       <SignalPeriodCard title="Average Battery Temperature" cabinets={selected} signal="average_temperature" unit="°C" domain={[0, 50]}
-        tagOf={gatewayMode ? avgTempTag : undefined} />
-      <SignalPeriodCard title="Current" cabinets={selected} signal="cluster_total_current" unit="A" signed />
+        color="var(--orange)" tagOf={gatewayMode ? avgTempTag : undefined} />
+      <SignalPeriodCard title="Current" cabinets={selected} signal="cluster_total_current" unit="A" signed color="var(--green)" />
     </div>
 
     {/* ── Third chart row ── battery temperature extremes and the PCS's power

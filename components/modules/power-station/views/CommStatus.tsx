@@ -21,6 +21,15 @@ const PILL: Record<string, { cls: string; label: string }> = {
   offline:  { cls: "red",   label: "Offline"  },
 };
 
+/* Related subsystems read as columns, not a row-major scatter: the pairs
+   together, the banks together, the rest as auxiliary. First match wins, so a
+   site without pairs or banks simply shows the Auxiliary column. */
+const GROUP_DEFS: { title: string; match: (d: { name: string }) => boolean }[] = [
+  { title: "Power Pairs", match: (d) => /^pair\b/i.test(d.name) },
+  { title: "BMS Banks",   match: (d) => /^bms\s*bank/i.test(d.name) },
+  { title: "Auxiliary",   match: () => true },
+];
+
 /* ── Subsystem reachability ────────────────────────────────────────────────
    The eight subsystems an operator checks per device, plus the device's own
    link at the top.
@@ -57,6 +66,9 @@ export function CommStatus({ stationId }: { stationId: string }) {
   const online   = devices.filter((d) => d.status === "online").length;
   const abnormal = devices.filter((d) => d.status === "abnormal").length;
   const offline  = devices.filter((d) => d.status === "offline").length;
+  const groups = GROUP_DEFS
+    .map((g) => ({ title: g.title, devices: devices.filter((d) => GROUP_DEFS.find((x) => x.match(d)) === g) }))
+    .filter((g) => g.devices.length > 0);
 
   return (
     <div className="view-stack">
@@ -113,43 +125,45 @@ export function CommStatus({ stationId }: { stationId: string }) {
           <EmptyState title="No Devices" description="The gateway reported no assets for this source." />
         ) : (
           <div style={{
-            display: "grid", gap: "var(--gap-sm)",
-            gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
+            display: "grid", gap: "var(--gap)", alignItems: "start",
+            gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
           }}>
-            {devices.map((dev) => {
-              const link = PILL[dev.status] ?? PILL.offline;
-              return (
-                <div key={dev.id} className="surface-card" style={{ padding: "var(--pad-sm) var(--pad)" }}>
-                  {/* The device's own link leads, and is the only row with a rule
-                      under it — it is the parent of everything listed below, not
-                      another item in the list. */}
-                  <div style={{
-                    display: "flex", alignItems: "center", justifyContent: "space-between",
-                    gap: 10,
-                  }}>
-                    <span
-                      title={dev.name}
-                      style={{
-                        minWidth: 0, fontSize: 12.5, fontWeight: 600, color: "var(--ink)",
-                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                      }}
-                    >
-                      {dev.name}
-                    </span>
-                    <span className={`pill ${link.cls}`} style={{ flex: "0 0 auto" }}>
-                      <span className="dot" /> {link.label}
-                    </span>
-                  </div>
-                  {/* When this device's data was last captured. */}
-                  {Number.isFinite(Date.parse(dev.lastSeen)) && (
-                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>
-                      Captured {new Date(dev.lastSeen).toLocaleTimeString("en-GB", { timeZone: "Asia/Kolkata", hour12: false })}
-                    </div>
-                  )}
-
+            {groups.map((g) => (
+              <div key={g.title}>
+                {/* The series heading, so a column reads as one group of kit. */}
+                <div style={{
+                  fontSize: 11.5, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase",
+                  color: "var(--muted)", margin: "2px 0 8px 2px",
+                }}>
+                  {g.title} <span style={{ fontWeight: 400, color: "var(--line2)" }}>· {g.devices.length}</span>
                 </div>
-              );
-            })}
+                <div style={{ display: "flex", flexDirection: "column", gap: "var(--gap-sm)" }}>
+                  {g.devices.map((dev) => {
+                    const link = PILL[dev.status] ?? PILL.offline;
+                    return (
+                      <div key={dev.id} className="surface-card" style={{ padding: "var(--pad-sm) var(--pad)" }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                          <span title={dev.name} style={{
+                            minWidth: 0, fontSize: 12.5, fontWeight: 600, color: "var(--ink)",
+                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                          }}>
+                            {dev.name}
+                          </span>
+                          <span className={`pill ${link.cls}`} style={{ flex: "0 0 auto" }}>
+                            <span className="dot" /> {link.label}
+                          </span>
+                        </div>
+                        {Number.isFinite(Date.parse(dev.lastSeen)) && (
+                          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>
+                            Captured {new Date(dev.lastSeen).toLocaleTimeString("en-GB", { timeZone: "Asia/Kolkata", hour12: false })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         )}
 
