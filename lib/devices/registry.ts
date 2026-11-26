@@ -70,6 +70,8 @@ export const DEVICE_TYPES: readonly DeviceType[] = [
   { kind: "io_module",       substream: "io_module",       label: "IO Module",       linkPoint: "p1125" },
   { kind: "ems_system",      substream: "ems_system",      label: "EMS System" },
   { kind: "remote_control",  substream: "remote_control",  label: "Remote Control" },
+  { kind: "solar_meter",     substream: "solar_meter",     label: "Solar Meter" },
+  { kind: "load_meter",      substream: "load_meter",      label: "Load Meter" },
 ];
 
 const BY_KIND = new Map(DEVICE_TYPES.map((t) => [t.kind, t]));
@@ -88,7 +90,11 @@ export function deviceType(kind: string): DeviceType {
 
 /** `external_ems_1_grid_meter` → `grid_meter`; an id of another shape is its own kind. */
 export function kindOf(assetId: string): string {
-  return /^external_ems_\d+_(.+)$/.exec(assetId)?.[1] ?? assetId;
+  const ext = /^external_ems_\d+_(.+)$/.exec(assetId)?.[1];
+  if (ext) return ext;
+  // Kalpa SECURE meter assets carry an instance suffix: solar_meter_1 -> solar_meter.
+  const meter = /^((?:solar|load)_meter)_\d+$/.exec(assetId)?.[1];
+  return meter ?? assetId;
 }
 
 /** The link points of every type that has one — what reachability reads ask for. */

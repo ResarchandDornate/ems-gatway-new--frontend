@@ -16,6 +16,7 @@ import { MainMeterView }   from "./views/MainMeterView";
 // import { MeterDataView }   from "./views/MeterDataView";
 // import { DeviceListView }  from "./views/DeviceListView";
 import { SolarInverterView } from "./views/SolarInverterView";
+import { MeterReadingsView } from "./views/MeterReadingsView";
 import { LoadingState }    from "@/components/shared/LoadingState";
 import type { Cabinet } from "@/lib/api/types";
 import { PageHeader, PageStat } from "@/components/PageHeader";
@@ -24,7 +25,7 @@ import { PageHeader, PageStat } from "@/components/PageHeader";
 // Flat and numbered, matching the shared module pattern (see PowerStationMonitoring).
 // The old collapsible groups nested four destinations two levels deep for no
 // navigational gain.
-type NavKey = "ess-cabinet" | "meter" | "solar" | "device-list";
+type NavKey = "ess-cabinet" | "meter" | "solar" | "solar-meter" | "load-meter" | "device-list";
 
 interface NavItem {
   key: NavKey;
@@ -47,6 +48,8 @@ const NAV_ITEMS: NavItem[] = [
   { key: "ess-cabinet", label: "Energy Storage Cabinet"        },
   { key: "meter",       label: "Main Electricity Meter Data", device: "grid_meter" },
   { key: "solar",       label: "Solar Inverter"                },
+  { key: "solar-meter", label: "Solar Meter", device: "solar_meter" },
+  { key: "load-meter",  label: "Load Meter", device: "load_meter" },
   // Device List is switched off for now; restore this line to bring it back.
   // { key: "device-list", label: "Device List"                   },
   // { key: "sub-device",  label: "Sub-device Monitoring" },
@@ -233,6 +236,8 @@ export function EquipmentMonitoring({ stationId }: { stationId: string }) {
             {/* {activeNav === "sub-device"  && <SubDeviceView  stationId={stationId} />} */}
             {activeNav === "meter"       && <MainMeterView stationId={stationId} />}
             {activeNav === "solar"       && <SolarInverterView gatewayId={stationId} />}
+            {activeNav === "solar-meter" && <MeterReadingsView gatewayId={stationId} substream="solar_meter" title="Solar Meter" />}
+            {activeNav === "load-meter"  && <MeterReadingsView gatewayId={stationId} substream="load_meter" title="Load Meter" />}
             {/* {activeNav === "device-list" && <DeviceListView stationId={stationId} />} */}
           </div>
         </div>

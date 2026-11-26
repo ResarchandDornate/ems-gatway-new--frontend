@@ -75,6 +75,8 @@ export const SUBSTREAMS = [
   "dehumidifier",
   "io_module",
   "remote_control",
+  "solar_meter",
+  "load_meter",
 ] as const;
 export type Substream = (typeof SUBSTREAMS)[number];
 
