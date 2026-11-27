@@ -24,6 +24,7 @@ type Profile = {
   latitude: number | null; longitude: number | null;
   solar_capacity_kw: number | null; connection_voltage_kv: number | null;
   battery_capacity_kwh: number | null; pcs_capacity_kw: number | null;
+  state: string | null; pincode: string | null;
   comm_pcs_ems: boolean; comm_pcs_battery: boolean; comm_battery_ems: boolean;
   comm_ems_meter_ems: boolean; comm_solar_inverter_ems: boolean;
   updated_by: string | null; updated_at: string | null;
@@ -51,6 +52,7 @@ export default function SiteConfigPage() {
   const [orgs, setOrgs] = useState<Org[] | null>(null);
   const [profiles, setProfiles] = useState<Profile[] | null>(null);
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<{ siteId: string; siteName: string; profile: Profile | undefined } | null>(null);
 
   const authed = useCallback(
     (path: string, init?: RequestInit) =>
@@ -143,25 +145,31 @@ export default function SiteConfigPage() {
           </div>
 
           <div className="rounded-xl bg-surface2 border border-line overflow-x-auto">
-            <table className="w-full text-[12.5px] min-w-[760px]">
+            <table className="w-full text-[12.5px] min-w-[1120px]">
               <thead>
                 <tr className="text-left text-muted bg-surface3">
+                  <th className="px-3 py-2 font-medium text-right">S.No</th>
                   <th className="px-3 py-2 font-medium">Company</th>
                   <th className="px-3 py-2 font-medium">Site</th>
                   <th className="px-3 py-2 font-medium">Location</th>
+                  <th className="px-3 py-2 font-medium">State</th>
+                  <th className="px-3 py-2 font-medium">Pincode</th>
                   <th className="px-3 py-2 font-medium text-right">Solar kW</th>
                   <th className="px-3 py-2 font-medium text-right">Battery kWh</th>
                   <th className="px-3 py-2 font-medium text-right">PCS kW</th>
+                  <th className="px-3 py-2 font-medium text-right">Voltage kV</th>
                   <th className="px-3 py-2 font-medium">Comms</th>
+                  <th className="px-3 py-2 font-medium text-right">Action</th>
                 </tr>
               </thead>
               <tbody>
                 {loading && !rows.length ? (
-                  <tr><td colSpan={7} className="px-3 py-6 text-center text-muted">Loading…</td></tr>
+                  <tr><td colSpan={12} className="px-3 py-6 text-center text-muted">Loading…</td></tr>
                 ) : !rows.length ? (
-                  <tr><td colSpan={7} className="px-3 py-6 text-center text-muted">No sites registered yet.</td></tr>
-                ) : rows.map(({ org, site, p }) => (
+                  <tr><td colSpan={12} className="px-3 py-6 text-center text-muted">No sites registered yet.</td></tr>
+                ) : rows.map(({ org, site, p }, i) => (
                   <tr key={site.id} className="border-t border-line">
+                    <td className="px-3 py-2 text-right text-ink3">{i + 1}</td>
                     <td className="px-3 py-2 text-ink">{p?.company_name || org}</td>
                     <td className="px-3 py-2">{site.name}</td>
                     <td className="px-3 py-2 text-ink3">
@@ -169,11 +177,20 @@ export default function SiteConfigPage() {
                         ? `${p.latitude.toFixed(3)}, ${p.longitude.toFixed(3)}`
                         : p?.address || <span className="text-muted">—</span>}
                     </td>
+                    <td className="px-3 py-2">{p?.state || <span className="text-muted">—</span>}</td>
+                    <td className="px-3 py-2">{p?.pincode || <span className="text-muted">—</span>}</td>
                     <td className="px-3 py-2 text-right">{num(p?.solar_capacity_kw)}</td>
                     <td className="px-3 py-2 text-right">{num(p?.battery_capacity_kwh)}</td>
                     <td className="px-3 py-2 text-right">{num(p?.pcs_capacity_kw)}</td>
+                    <td className="px-3 py-2 text-right">{num(p?.connection_voltage_kv)}</td>
                     <td className="px-3 py-2">
                       {p ? <CommDots p={p} /> : <span className="text-muted">Not registered</span>}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <button onClick={() => setEditing({ siteId: site.id, siteName: site.name, profile: p })}
+                              className="px-2.5 py-1 rounded-md border border-line text-[11.5px] text-ink3 hover:bg-surface3">
+                        {p ? "Edit" : "Register"}
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -188,6 +205,17 @@ export default function SiteConfigPage() {
           authed={authed}
           onClose={() => setAdding(false)}
           onDone={() => { setAdding(false); load(); }}
+        />
+      )}
+
+      {editing && (
+        <EditSiteModal
+          authed={authed}
+          siteId={editing.siteId}
+          siteName={editing.siteName}
+          profile={editing.profile}
+          onClose={() => setEditing(null)}
+          onDone={() => { setEditing(null); load(); }}
         />
       )}
     </div>
@@ -503,6 +531,129 @@ function CredRow({ label, value, secret }: { label: string; value: string; secre
         <button onClick={copy} className="px-2 py-1.5 rounded-md border border-line text-ink3 hover:bg-surface3" title="Copy">
           {copied ? <Check size={13} className="text-good" /> : <Copy size={13} />}
         </button>
+      </div>
+    </div>
+  );
+}
+
+/* ── Edit / Register a site ────────────────────────────────────────────────────
+   Updates the registration detail only (POST site-profiles/{id} is an upsert),
+   never the customer org, gateway or credentials — so a typo is fixed without
+   re-provisioning. The same modal registers an existing unregistered site. */
+type EditForm = {
+  company: string; address: string; latitude: string; longitude: string;
+  solar: string; voltage: string; battery: string; pcs: string;
+  state: string; pincode: string; comms: Record<string, boolean>;
+};
+
+const edStr = (v: unknown) => (v == null ? "" : String(v));
+
+function editFormOf(p: Profile | undefined): EditForm {
+  return {
+    company: edStr(p?.company_name), address: edStr(p?.address),
+    latitude: edStr(p?.latitude), longitude: edStr(p?.longitude),
+    solar: edStr(p?.solar_capacity_kw), voltage: edStr(p?.connection_voltage_kv),
+    battery: edStr(p?.battery_capacity_kwh), pcs: edStr(p?.pcs_capacity_kw),
+    state: edStr(p?.state), pincode: edStr(p?.pincode),
+    comms: Object.fromEntries(COMMS.map((c) => [c.key, !!(p && p[c.key])])),
+  };
+}
+
+function EditSiteModal({
+  authed, siteId, siteName, profile, onClose, onDone,
+}: {
+  authed: (p: string, init?: RequestInit) => Promise<Response>;
+  siteId: string; siteName: string; profile: Profile | undefined;
+  onClose: () => void; onDone: () => void;
+}) {
+  const [f, setF] = useState<EditForm>(() => editFormOf(profile));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [states, setStates] = useState<string[]>([]);
+  useEffect(() => {
+    authed("financials/tariff-templates")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((ts: { state: string }[]) => setStates([...new Set(ts.map((t) => t.state))].sort()))
+      .catch(() => {});
+  }, [authed]);
+  const set = (k: keyof EditForm, v: string) => setF((p) => ({ ...p, [k]: v }));
+  const toNum = (s: string) => (s.trim() === "" ? null : Number(s));
+
+  const save = async () => {
+    setBusy(true); setErr("");
+    try {
+      const r = await authed(`site-profiles/${siteId}`, {
+        method: "POST",
+        body: JSON.stringify({
+          company_name: f.company.trim() || null, address: f.address.trim() || null,
+          latitude: toNum(f.latitude), longitude: toNum(f.longitude),
+          solar_capacity_kw: toNum(f.solar), connection_voltage_kv: toNum(f.voltage),
+          battery_capacity_kwh: toNum(f.battery), pcs_capacity_kw: toNum(f.pcs),
+          state: f.state || null, pincode: f.pincode.trim() || null,
+          ...Object.fromEntries(COMMS.map((c) => [c.key, !!f.comms[c.key]])),
+        }),
+      });
+      if (!r.ok) throw new Error(await msg(r, "save site detail"));
+      onDone();
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : "Save failed.");
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4" role="dialog" aria-modal>
+      <div className="w-full max-w-lg mt-10 rounded-xl bg-surface2 border border-line shadow-xl">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-line">
+          <div className="flex items-center gap-2 text-ink font-semibold text-[14px]">
+            <MapPin size={16} /> {profile ? "Edit site" : "Register site"} — {siteName}
+          </div>
+          <button onClick={onClose} className="text-ink3 hover:text-ink"><X size={16} /></button>
+        </div>
+
+        <div className="px-4 py-4">
+          {err && <div className="text-[12.5px] text-bad mb-3">{err}</div>}
+          <div className="grid grid-cols-2 gap-3">
+            <Field className="col-span-2" label="Company name" value={f.company} onChange={(v) => set("company", v)} />
+            <Field className="col-span-2" label="Address" value={f.address} onChange={(v) => set("address", v)} />
+            <Field label="Latitude" value={f.latitude} onChange={(v) => set("latitude", v)} />
+            <Field label="Longitude" value={f.longitude} onChange={(v) => set("longitude", v)} />
+            <Field label="Solar capacity (kW)" value={f.solar} onChange={(v) => set("solar", v)} />
+            <Field label="Connection voltage (kV)" value={f.voltage} onChange={(v) => set("voltage", v)} />
+            <Field label="Battery capacity (kWh)" value={f.battery} onChange={(v) => set("battery", v)} />
+            <Field label="PCS capacity (kW)" value={f.pcs} onChange={(v) => set("pcs", v)} />
+            <label className="block">
+              <span className="block text-[11px] text-muted mb-1">State</span>
+              <select value={f.state} onChange={(e) => set("state", e.target.value)}
+                      className="w-full px-3 py-2 rounded-md bg-surface border border-line text-[13px] text-ink">
+                <option value="">{states.length ? "Select a state…" : "—"}</option>
+                {states.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </label>
+            <Field label="Pincode" value={f.pincode} onChange={(v) => set("pincode", v)} />
+            <div className="col-span-2 mt-1">
+              <div className="text-[11px] text-muted mb-1.5">Communication mappings</div>
+              <div className="flex flex-wrap gap-1.5">
+                {COMMS.map((c) => (
+                  <button key={c.key} type="button"
+                    onClick={() => setF((p) => ({ ...p, comms: { ...p.comms, [c.key]: !p.comms[c.key] } }))}
+                    className={`px-2.5 py-1 rounded-md text-[11.5px] border transition-colors ${
+                      f.comms[c.key] ? "bg-accent/15 border-accent/40 text-accent" : "bg-surface border-line text-ink3 hover:border-line2"
+                    }`}>
+                    {f.comms[c.key] ? <Check size={11} className="inline mr-1 -mt-0.5" /> : null}{c.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between px-4 py-3 border-t border-line">
+          <button onClick={onClose} className="px-3 py-1.5 rounded-md border border-line text-[12.5px] text-ink3">Cancel</button>
+          <button disabled={busy} onClick={save}
+                  className="px-4 py-1.5 rounded-md bg-accent text-white text-[12.5px] font-semibold disabled:opacity-50">
+            {busy ? "Saving…" : "Save"}
+          </button>
+        </div>
       </div>
     </div>
   );
