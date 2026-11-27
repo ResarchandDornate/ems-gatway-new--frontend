@@ -30,11 +30,13 @@ const authHeaders = (): Record<string, string> => {
 const CONFIG_URL = (g: string) => `/api/central/automation-config?gateway_id=${encodeURIComponent(g)}`;
 const STATUS_URL = (g: string) => `/api/central/automation-status/latest?gateway_id=${encodeURIComponent(g)}&limit=1`;
 const EVENTS_URL = (g: string) => `/api/central/automation-events?gateway_id=${encodeURIComponent(g)}&limit=50`;
+const COMMANDS_URL = "/api/central/commands";
 
 type StatusRow = {
   automation_enabled: boolean | null; supervisor_alive: boolean | null;
   phase: string | null; direction: string | null; fault_latched: boolean | null;
   safe_stop_requested: boolean | null; received_at_utc: string;
+  config_revision?: number | null; payload?: Record<string, unknown> | null;
 };
 type EventRow = {
   event_id: string; event_type: string | null; phase: string | null;
@@ -108,6 +110,39 @@ function clone(f: Form): Form {
   return { ...f, days: new Set(f.days), pairs: Object.fromEntries(PAIRS.map((p) => [p, { ...f.pairs[p] }])) as Record<PairId, PairForm> };
 }
 
+/** The schedule the gateway is actually running, out of its automation_status record. It echoes
+   the config it pulled under payload.config; some builds nest it as payload.schedule. Returns
+   null when neither is present, so the stored desired-state is used as the fallback. */
+function scheduleOf(row: StatusRow | undefined): Record<string, unknown> | null {
+  const p = row?.payload;
+  if (!p || typeof p !== "object") return null;
+  const c = (p as Record<string, unknown>).config ?? (p as Record<string, unknown>).schedule;
+  return c && typeof c === "object" ? c as Record<string, unknown> : null;
+}
+
+/** Poll the S9 command read until the gateway closes this command, or we stop waiting. Terminal
+   states are the contract's completed/rejected/failed/timeout; accepted/executing keep polling. */
+async function awaitReadback(commandId: string): Promise<{ status: string | null; reason: string | null }> {
+  const terminal = new Set(["completed", "rejected", "failed", "timeout"]);
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 2_000));
+    try {
+      const r = await fetch(`${COMMANDS_URL}?command_id=${encodeURIComponent(commandId)}&limit=1`,
+                           { headers: authHeaders(), cache: "no-store" });
+      if (!r.ok) continue;
+      const row = ((await r.json()).results ?? [])[0];
+      const fs = row?.final_status as string | undefined;
+      if (fs && terminal.has(fs)) {
+        const rb = row.readback_value;
+        const reason = rb && typeof rb === "object" ? (rb.reason ?? rb.error ?? null) : rb ?? null;
+        return { status: fs, reason: reason != null ? String(reason) : null };
+      }
+    } catch { /* keep polling */ }
+  }
+  return { status: null, reason: null };
+}
+
 // ── atoms ───────────────────────────────────────────────────────────────────
 function Field({ label, value, onChange, type = "text", w = 110 }: {
   label: string; value: string; onChange: (v: string) => void; type?: string; w?: number;
@@ -151,10 +186,16 @@ export function AutomationView({ gatewayId }: { gatewayId: string }) {
     let alive = true;
     (async () => {
       try {
-        const r = await fetch(CONFIG_URL(gatewayId), { headers: authHeaders(), cache: "no-store" });
-        if (!r.ok) throw new Error(r.status === 403 ? "You can view automation but not change it." : `Config unavailable (${r.status})`);
-        const j = await r.json();
-        if (alive) setForm(fromConfig(j.config));
+        // The gateway's running schedule wins over the stored desired-state: open the form on what
+        // is live on site, falling back to the saved config, so it never opens on web defaults.
+        const [cfgR, stR] = await Promise.all([
+          fetch(CONFIG_URL(gatewayId), { headers: authHeaders(), cache: "no-store" }),
+          fetch(STATUS_URL(gatewayId), { headers: authHeaders(), cache: "no-store" }).catch(() => null),
+        ]);
+        if (!cfgR.ok) throw new Error(cfgR.status === 403 ? "You can view automation but not change it." : `Config unavailable (${cfgR.status})`);
+        const cfg = (await cfgR.json()).config;
+        const live = stR && stR.ok ? scheduleOf(((await stR.json()).results ?? [])[0]) : null;
+        if (alive) setForm(fromConfig(live ?? cfg));
       } catch (e) {
         if (alive) setErr(e instanceof Error ? e.message : "Could not load automation config.");
       } finally {
@@ -202,14 +243,32 @@ export function AutomationView({ gatewayId }: { gatewayId: string }) {
   async function save() {
     setSaving(true); setErr(null); setNote(null);
     try {
-      const r = await fetch(CONFIG_URL(gatewayId), {
+      // 1. Persist the schedule the gateway will pull on its next config poll.
+      const cfg = await fetch(CONFIG_URL(gatewayId), {
         method: "POST", headers: { "content-type": "application/json", ...authHeaders() },
         body: JSON.stringify(toConfig(form)),
       });
-      if (r.status === 403) throw new Error("This account is not allowed to change automation.");
-      if (r.status === 401) throw new Error("Session expired — sign in again.");
-      if (!r.ok) throw new Error(`Save rejected (${r.status})`);
-      setNote("Automation settings saved.");
+      if (cfg.status === 403) throw new Error("This account is not allowed to change automation.");
+      if (cfg.status === 401) throw new Error("Session expired — sign in again.");
+      if (!cfg.ok) throw new Error(`Config save rejected (${cfg.status})`);
+
+      // 2. Command the supervisor on or off. Writing the config alone changes nothing on site —
+      //    this D1 downlink is what the gateway acts on, and its readback is the real outcome.
+      const want = form.enabled ? "automation_enable" : "automation_disable";
+      const c = await fetch(COMMANDS_URL, {
+        method: "POST", headers: { "content-type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ gateway_id: gatewayId, command_type: want, requires_readback: true }),
+      });
+      if (c.status === 403) throw new Error("This account is not allowed to command automation.");
+      if (!c.ok) throw new Error(`Command rejected (${c.status})`);
+      const id = (await c.json()).command_id as string;
+
+      setNote("Sent to gateway — awaiting readback…");
+      const back = await awaitReadback(id);
+      const label = want.replace(/_/g, " ");
+      if (back.status === "completed") { setNote(`Gateway completed ${label}.`); status.refetch(); }
+      else if (back.status == null) setErr(`No readback in time — the gateway may be offline. ${label} is still pending.`);
+      else setErr(`Gateway ${back.status} the ${label}${back.reason ? `: ${back.reason}` : ""}.`);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Save failed.");
     } finally { setSaving(false); }

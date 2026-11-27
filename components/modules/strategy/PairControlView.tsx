@@ -26,7 +26,9 @@ import { Lock, Unlock } from "lucide-react";
 // is live (POST /api/v1/commands does not exist yet: it answers 404).
 const STATUS_URL  = (gatewayId: string) =>
   `/api/central/charge-discharge/latest?gateway_id=${encodeURIComponent(gatewayId)}&limit=20`;
-const COMMAND_URL = "/api/central/commands";   // TODO: backend D1 submit
+const AUTO_URL    = (gatewayId: string) =>
+  `/api/central/automation-status/latest?gateway_id=${encodeURIComponent(gatewayId)}&limit=1`;
+const COMMAND_URL = "/api/central/commands";
 
 const PAIRS = ["pair_1", "pair_2", "pair_3", "pair_4"] as const;
 type Pair = (typeof PAIRS)[number];
@@ -82,6 +84,21 @@ function usePairStatus(gatewayId: string) {
   });
 }
 
+/** Whether the gateway's own automation supervisor is running. Null until the first read. */
+function useAutomationOn(gatewayId: string): boolean | null {
+  const { data } = useQuery({
+    queryKey: ["central", "automation-status", gatewayId],
+    queryFn: async () => {
+      const r = await fetch(AUTO_URL(gatewayId), { headers: authHeaders(), cache: "no-store" });
+      if (!r.ok) throw new Error(`Automation status unavailable (${r.status})`);
+      return ((await r.json()).results ?? []) as { automation_enabled: boolean | null }[];
+    },
+    enabled: !!gatewayId, staleTime: 8_000, refetchInterval: 10_000,
+  });
+  const e = data?.[0]?.automation_enabled;
+  return e == null ? null : e;
+}
+
 // ── small UI atoms, matching the house design ───────────────────────────────
 function Reading({ label, value }: { label: string; value: string }) {
   return (
@@ -107,6 +124,7 @@ function Card({ eyebrow, note, children }: { eyebrow: string; note?: string; chi
 // ── view ─────────────────────────────────────────────────────────────────────
 export function PairControlView({ gatewayId }: { gatewayId: string }) {
   const { data: rows, error: statusErr } = usePairStatus(gatewayId);
+  const autoOn = useAutomationOn(gatewayId);
   const { requireAuth, relock, unlocked, gate } = usePasswordGate();
   /* Newest per pair: rows arrive newest first. */
   const byPair = new Map<string, PairStatus>();
@@ -196,12 +214,18 @@ export function PairControlView({ gatewayId }: { gatewayId: string }) {
         </div>
         {statusErr && <span className="text-[11.5px]" style={{ color: "var(--red)" }}>{(statusErr as Error).message}</span>}
         <div className="ml-auto flex items-center gap-2">
+          {/* Who holds the pairs — read from the gateway, not the web form. While its supervisor
+              is running it owns the pairs; disable it from the Automation tab to take them back. */}
+          <span className={`pill ${autoOn == null ? "gray" : autoOn ? "red" : "green"}`} title="Gateway automation supervisor">
+            <span className="dot" />{autoOn == null ? "Automation —" : autoOn ? "Automation On" : "Automation Off"}
+          </span>
+          {/* The password re-auth that protects a manual write — separate from automation state. */}
           {unlocked ? (
-            <button onClick={relock} className="pill green" title="Controls unlocked — click to lock">
-              <Unlock size={11} /> Controls Unlocked
+            <button onClick={relock} className="pill green" title="Write access unlocked — click to lock">
+              <Unlock size={11} /> Write Unlocked
             </button>
           ) : (
-            <span className="pill gray"><Lock size={11} /> Controls Locked</span>
+            <span className="pill gray"><Lock size={11} /> Write Locked</span>
           )}
         </div>
       </div>
