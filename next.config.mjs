@@ -33,9 +33,12 @@ const nextConfig = {
         ],
       },
       {
-        // Everything else — HTML and the /api proxy — stays fresh: HTML carries
-        // the current chunk URLs, and the API is live data.
-        source: "/((?!_next/static/).*)",
+        // Everything else — HTML and the other /api proxies — stays fresh: HTML
+        // carries the current chunk URLs, and those APIs are live data.
+        // /api/central is excluded so its route handler can set its own per-request
+        // caching (private, short-TTL on GET reads); a blanket no-store here would
+        // override it.
+        source: "/((?!_next/static/|api/central/).*)",
         headers: [
           { key: "Cache-Control", value: "no-store, must-revalidate" },
         ],
