@@ -3,14 +3,15 @@
 /**
  * Automation (S10 / CG-28) — the scheduled charge-discharge windows the gateway runs on its own.
  *
- * The editor saves the whole config blob to the central store (POST /automation-config); the
- * gateway polls it, the same way it polls pending commands. Live phase and the event feed are the
- * existing structured reads (/automation-status, /automation-events), site-scoped by the proxy.
- *
- * Only command:write holders can save — the backend enforces it; a refusal surfaces as a notice.
+ * Save does not write a web store the gateway reads: the gateway acts on D1 commands. An on/off-only
+ * change goes out as automation_enable / automation_disable (works for a site_operator); any schedule
+ * change goes out as automation_set_schedule (admin only) — a full replace the gateway reads back and
+ * verifies on S9. While pairs are running the gateway needs confirm_stop_if_active, so Save confirms
+ * first. The form loads the gateway's live schedule from /automation-status and reloads on a new
+ * config_revision. The config store POST is kept only as a web-side record.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getSession } from "@/lib/central";
 import { usePasswordGate } from "./controlAuth";
@@ -36,7 +37,7 @@ type StatusRow = {
   automation_enabled: boolean | null; supervisor_alive: boolean | null;
   phase: string | null; direction: string | null; fault_latched: boolean | null;
   safe_stop_requested: boolean | null; received_at_utc: string;
-  config_revision?: number | null; payload?: Record<string, unknown> | null;
+  config_revision?: string | number | null; payload?: Record<string, unknown> | null;
 };
 type EventRow = {
   event_id: string; event_type: string | null; phase: string | null;
@@ -48,7 +49,7 @@ type PairForm = { enabled: boolean; chargeKw: string; dischargeKw: string };
 type Form = {
   enabled: boolean;
   chargeStart: string; chargeStop: string; dischargeStart: string; dischargeStop: string;
-  startAboveKw: string; startHoldSeconds: string; stopBelowKw: string; stopHoldSeconds: string;
+  startAboveKw: string; startHoldSeconds: string; stopBelowKw: string; stopHoldSeconds: string; maxAgeSeconds: string;
   prepLeadMin: string; dispatchLeadSec: string;
   days: Set<number>;
   pairs: Record<PairId, PairForm>;
@@ -57,7 +58,7 @@ type Form = {
 const DEFAULTS: Form = {
   enabled: false,
   chargeStart: "09:00", chargeStop: "14:30", dischargeStart: "15:00", dischargeStop: "17:00",
-  startAboveKw: "100", startHoldSeconds: "60", stopBelowKw: "80", stopHoldSeconds: "30",
+  startAboveKw: "100", startHoldSeconds: "60", stopBelowKw: "80", stopHoldSeconds: "30", maxAgeSeconds: "15",
   prepLeadMin: "15", dispatchLeadSec: "120",
   days: new Set([1, 2, 3, 4, 5, 6, 7]),
   pairs: Object.fromEntries(PAIRS.map((p) => [p, { enabled: true, chargeKw: "5", dischargeKw: "5" }])) as Record<PairId, PairForm>,
@@ -79,6 +80,7 @@ function fromConfig(c: Record<string, unknown> | null | undefined): Form {
     dischargeStart: str(discharge.start, "15:00"), dischargeStop: str(discharge.stop, "17:00"),
     startAboveKw: str(solar.start_above_kw, "100"), startHoldSeconds: str(solar.start_hold_seconds, "60"),
     stopBelowKw: str(solar.stop_below_kw, "80"), stopHoldSeconds: str(solar.stop_hold_seconds, "30"),
+    maxAgeSeconds: str(solar.max_age_seconds, "15"),
     prepLeadMin: str(timing.preparation_lead_minutes, "15"), dispatchLeadSec: str(timing.power_dispatch_lead_seconds, "120"),
     days,
     pairs: Object.fromEntries(PAIRS.map((p) => {
@@ -88,7 +90,8 @@ function fromConfig(c: Record<string, unknown> | null | undefined): Form {
   };
 }
 
-/** The flat form → the stored blob (Flutter shape). */
+/** The flat form → the stored blob / set_schedule shape (gateway keys). Sends every field so the
+   gateway never fills a gap from its own defaults. */
 function toConfig(f: Form): Record<string, unknown> {
   const n = (s: string) => Number(s);
   return {
@@ -97,7 +100,7 @@ function toConfig(f: Form): Record<string, unknown> {
     discharge: { start: f.dischargeStart.trim(), stop: f.dischargeStop.trim() },
     solar: {
       start_above_kw: n(f.startAboveKw), start_hold_seconds: n(f.startHoldSeconds),
-      stop_below_kw: n(f.stopBelowKw), stop_hold_seconds: n(f.stopHoldSeconds), max_age_seconds: 15,
+      stop_below_kw: n(f.stopBelowKw), stop_hold_seconds: n(f.stopHoldSeconds), max_age_seconds: n(f.maxAgeSeconds),
     },
     timing: { preparation_lead_minutes: n(f.prepLeadMin), power_dispatch_lead_seconds: n(f.dispatchLeadSec) },
     pairs: Object.fromEntries(PAIRS.map((p) => [p, {
@@ -110,21 +113,29 @@ function clone(f: Form): Form {
   return { ...f, days: new Set(f.days), pairs: Object.fromEntries(PAIRS.map((p) => [p, { ...f.pairs[p] }])) as Record<PairId, PairForm> };
 }
 
-/** The schedule the gateway is actually running, out of its automation_status record. It echoes
-   the config it pulled under payload.config; some builds nest it as payload.schedule. Returns
-   null when neither is present, so the stored desired-state is used as the fallback. */
+/** The schedule the gateway is actually running, out of its automation_status record. The gateway
+   reports it at the record's top level, with charge_window/discharge_window where the form's config
+   uses charge/discharge and automation_enabled where it uses enabled; the rest of the keys match.
+   Returns null when the record carries no schedule, so the stored config is used as the fallback. */
 function scheduleOf(row: StatusRow | undefined): Record<string, unknown> | null {
   const p = row?.payload;
   if (!p || typeof p !== "object") return null;
-  const c = (p as Record<string, unknown>).config ?? (p as Record<string, unknown>).schedule;
-  return c && typeof c === "object" ? c as Record<string, unknown> : null;
+  const o = p as Record<string, unknown>;
+  if (!o.charge_window && !o.discharge_window && !o.pairs) return null;
+  return {
+    enabled: o.automation_enabled === true,
+    days: o.days, solar: o.solar, timing: o.timing, pairs: o.pairs,
+    charge: o.charge_window, discharge: o.discharge_window,
+  };
 }
 
 /** Poll the S9 command read until the gateway closes this command, or we stop waiting. Terminal
-   states are the contract's completed/rejected/failed/timeout; accepted/executing keep polling. */
-async function awaitReadback(commandId: string): Promise<{ status: string | null; reason: string | null }> {
+   states are the contract's completed/rejected/failed/timeout; accepted/executing keep polling.
+   Carries back the gateway's verified flag and error code so Save reports the real outcome. */
+async function awaitReadback(commandId: string): Promise<{ status: string | null; reason: string | null; verified: boolean; errorCode: string | null }> {
   const terminal = new Set(["completed", "rejected", "failed", "timeout"]);
   const deadline = Date.now() + 30_000;
+  const pick = (o: unknown, k: string) => (o && typeof o === "object" ? (o as Record<string, unknown>)[k] : undefined);
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 2_000));
     try {
@@ -134,13 +145,57 @@ async function awaitReadback(commandId: string): Promise<{ status: string | null
       const row = ((await r.json()).results ?? [])[0];
       const fs = row?.final_status as string | undefined;
       if (fs && terminal.has(fs)) {
-        const rb = row.readback_value;
-        const reason = rb && typeof rb === "object" ? (rb.reason ?? rb.error ?? null) : rb ?? null;
-        return { status: fs, reason: reason != null ? String(reason) : null };
+        const rb = row.readback_value, pl = row.payload;
+        const reason = pick(pl, "validation_reason") ?? pick(rb, "reason") ?? pick(rb, "error") ?? null;
+        const errorCode = pick(pl, "gateway_error_code") ?? pick(rb, "gateway_error_code") ?? null;
+        const verified = pick(pl, "verified") === true || pick(rb, "verified") === true;
+        return { status: fs, reason: reason != null ? String(reason) : null, verified, errorCode: errorCode != null ? String(errorCode) : null };
       }
     } catch { /* keep polling */ }
   }
-  return { status: null, reason: null };
+  return { status: null, reason: null, verified: false, errorCode: null };
+}
+
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+const mins = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
+
+/** Client-side checks mirroring the gateway's AUTOMATION_SCHEDULE_INVALID rules, so an invalid
+   schedule is caught in the form instead of bouncing off S9. Returns a message, or null if valid. */
+function validate(f: Form): string | null {
+  for (const [lbl, s, e] of [["Charge", f.chargeStart, f.chargeStop], ["Discharge", f.dischargeStart, f.dischargeStop]] as const) {
+    if (!HHMM.test(s.trim()) || !HHMM.test(e.trim())) return `${lbl} times must be HH:MM (24-hour).`;
+    if (mins(s) >= mins(e)) return `${lbl} start must be before its stop (no crossing midnight).`;
+  }
+  const cs = mins(f.chargeStart), ce = mins(f.chargeStop), ds = mins(f.dischargeStart), de = mins(f.dischargeStop);
+  if (cs < de && ds < ce) return "Charge and discharge windows must not overlap.";
+  const enabledPairs = PAIRS.filter((p) => f.pairs[p].enabled);
+  if (f.enabled && enabledPairs.length === 0) return "Enable at least one pair, or switch automation off.";
+  for (const p of enabledPairs) {
+    for (const [lbl, v] of [["charge", f.pairs[p].chargeKw], ["discharge", f.pairs[p].dischargeKw]] as const) {
+      const n = Number(v);
+      if (!Number.isFinite(n) || n <= 0 || n > 250) return `${p.replace("_", " ")} ${lbl} power must be 0–250 kW (disable the pair to leave it out).`;
+    }
+  }
+  if (!(Number(f.startAboveKw) > Number(f.stopBelowKw))) return "Solar start-above must be greater than stop-below.";
+  for (const [lbl, v] of [["start hold", f.startHoldSeconds], ["stop hold", f.stopHoldSeconds], ["max-age", f.maxAgeSeconds]] as const)
+    if (!(Number(v) >= 1)) return `Solar ${lbl} must be at least 1 second.`;
+  const prep = Number(f.prepLeadMin), disp = Number(f.dispatchLeadSec);
+  if (!(prep >= 5 && prep <= 60)) return "Preparation lead must be 5–60 minutes.";
+  if (!(disp >= 0 && disp <= 300)) return "Power dispatch lead must be 0–300 seconds.";
+  if (disp >= prep * 60) return "Power dispatch lead must be shorter than the preparation lead.";
+  return null;
+}
+
+/** Everything the gateway treats as the schedule — i.e. not the on/off flag. */
+function sameSchedule(a: Form, b: Form): boolean {
+  const days = (f: Form) => [...f.days].sort((x, y) => x - y).join(",");
+  const pairs = (f: Form) => PAIRS.map((p) => `${f.pairs[p].enabled}:${f.pairs[p].chargeKw}:${f.pairs[p].dischargeKw}`).join("|");
+  return a.chargeStart === b.chargeStart && a.chargeStop === b.chargeStop &&
+         a.dischargeStart === b.dischargeStart && a.dischargeStop === b.dischargeStop &&
+         a.startAboveKw === b.startAboveKw && a.startHoldSeconds === b.startHoldSeconds &&
+         a.stopBelowKw === b.stopBelowKw && a.stopHoldSeconds === b.stopHoldSeconds && a.maxAgeSeconds === b.maxAgeSeconds &&
+         a.prepLeadMin === b.prepLeadMin && a.dispatchLeadSec === b.dispatchLeadSec &&
+         days(a) === days(b) && pairs(a) === pairs(b);
 }
 
 // ── atoms ───────────────────────────────────────────────────────────────────
@@ -179,15 +234,15 @@ export function AutomationView({ gatewayId }: { gatewayId: string }) {
   const [err, setErr] = useState<string | null>(null);
   const [filter, setFilter] = useState<"All" | "Operations" | "Warnings">("All");
   const { requireAuth, gate } = usePasswordGate();
+  const baselineRef = useRef<Form | null>(null);   // the form as last loaded from the gateway
+  const lastRevRef = useRef<string | number | null>(null);
 
-  // Config — loaded once into the editable form.
+  // Config — loaded once into the editable form, with the gateway's live schedule preferred.
   useEffect(() => {
     if (!gatewayId) return;
     let alive = true;
     (async () => {
       try {
-        // The gateway's running schedule wins over the stored desired-state: open the form on what
-        // is live on site, falling back to the saved config, so it never opens on web defaults.
         const [cfgR, stR] = await Promise.all([
           fetch(CONFIG_URL(gatewayId), { headers: authHeaders(), cache: "no-store" }),
           fetch(STATUS_URL(gatewayId), { headers: authHeaders(), cache: "no-store" }).catch(() => null),
@@ -195,7 +250,7 @@ export function AutomationView({ gatewayId }: { gatewayId: string }) {
         if (!cfgR.ok) throw new Error(cfgR.status === 403 ? "You can view automation but not change it." : `Config unavailable (${cfgR.status})`);
         const cfg = (await cfgR.json()).config;
         const live = stR && stR.ok ? scheduleOf(((await stR.json()).results ?? [])[0]) : null;
-        if (alive) setForm(fromConfig(live ?? cfg));
+        if (alive) { const f = fromConfig(live ?? cfg); setForm(f); baselineRef.current = clone(f); }
       } catch (e) {
         if (alive) setErr(e instanceof Error ? e.message : "Could not load automation config.");
       } finally {
@@ -226,6 +281,22 @@ export function AutomationView({ gatewayId }: { gatewayId: string }) {
   });
 
   const st = status.data?.[0];
+
+  // A new config_revision means the gateway's schedule changed (ours or someone else's). Reload the
+  // form from it — but never over unsaved edits, so an operator mid-change is not clobbered.
+  useEffect(() => {
+    const rev = st?.config_revision ?? null;
+    if (rev == null || rev === lastRevRef.current) return;
+    lastRevRef.current = rev;
+    const live = scheduleOf(st);
+    if (!live) return;
+    const base = baselineRef.current;
+    if (base && !sameSchedule(base, form)) return;
+    const f = fromConfig(live);
+    setForm(f); baselineRef.current = clone(f);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [st?.config_revision]);
+
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm((f) => ({ ...f, [k]: v }));
   const setPair = (p: PairId, patch: Partial<PairForm>) =>
     setForm((f) => ({ ...f, pairs: { ...f.pairs, [p]: { ...f.pairs[p], ...patch } } }));
@@ -243,32 +314,69 @@ export function AutomationView({ gatewayId }: { gatewayId: string }) {
   async function save() {
     setSaving(true); setErr(null); setNote(null);
     try {
-      // 1. Persist the schedule the gateway will pull on its next config poll.
-      const cfg = await fetch(CONFIG_URL(gatewayId), {
-        method: "POST", headers: { "content-type": "application/json", ...authHeaders() },
-        body: JSON.stringify(toConfig(form)),
-      });
-      if (cfg.status === 403) throw new Error("This account is not allowed to change automation.");
-      if (cfg.status === 401) throw new Error("Session expired — sign in again.");
-      if (!cfg.ok) throw new Error(`Config save rejected (${cfg.status})`);
+      const bad = validate(form);
+      if (bad) { setErr(bad); return; }
 
-      // 2. Command the supervisor on or off. Writing the config alone changes nothing on site —
-      //    this D1 downlink is what the gateway acts on, and its readback is the real outcome.
-      const want = form.enabled ? "automation_enable" : "automation_disable";
+      const base = baselineRef.current;
+      const scheduleChanged = !base || !sameSchedule(base, form);
+      const toggleChanged = !base || base.enabled !== form.enabled;
+      if (!scheduleChanged && !toggleChanged) { setNote("No changes to save."); return; }
+
+      const engaged = (st?.payload as Record<string, unknown> | undefined)?.hardware_engaged === true;
+
+      // On/off only -> enable/disable (a site_operator may disable; disable never needs confirm).
+      // Any schedule change -> set_schedule (admin only), a full replace the gateway reads back.
+      let commandType: string;
+      let args: Record<string, unknown>;
+      if (!scheduleChanged) {
+        commandType = form.enabled ? "automation_enable" : "automation_disable";
+        args = {};
+      } else {
+        commandType = "automation_set_schedule";
+        args = { schedule: toConfig(form) };
+      }
+
+      // Enabling or re-scheduling while pairs are running stops and restarts them — confirm first.
+      if (commandType !== "automation_disable" && engaged) {
+        if (!window.confirm("Pairs are running. Applying this will stop all pairs and restart them with the new settings. Continue?")) {
+          setNote("Cancelled — nothing sent."); return;
+        }
+        args = { ...args, confirm_stop_if_active: true };
+      }
+
+      // The config store is a web-side record only (the gateway does not poll it); keep it in step
+      // when the schedule changed.
+      if (scheduleChanged) {
+        const cfg = await fetch(CONFIG_URL(gatewayId), {
+          method: "POST", headers: { "content-type": "application/json", ...authHeaders() },
+          body: JSON.stringify(toConfig(form)),
+        });
+        if (cfg.status === 401) throw new Error("Session expired — sign in again.");
+        if (!cfg.ok && cfg.status !== 403) throw new Error(`Config save rejected (${cfg.status})`);
+      }
+
       const c = await fetch(COMMANDS_URL, {
         method: "POST", headers: { "content-type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ gateway_id: gatewayId, command_type: want, requires_readback: true }),
+        body: JSON.stringify({ gateway_id: gatewayId, command_type: commandType, arguments: args, requires_readback: true }),
       });
-      if (c.status === 403) throw new Error("This account is not allowed to command automation.");
+      if (c.status === 403) throw new Error(commandType === "automation_set_schedule"
+        ? "Only an admin can change the schedule — an operator can switch automation on or off."
+        : "This account is not allowed to command automation.");
       if (!c.ok) throw new Error(`Command rejected (${c.status})`);
       const id = (await c.json()).command_id as string;
 
       setNote("Sent to gateway — awaiting readback…");
       const back = await awaitReadback(id);
-      const label = want.replace(/_/g, " ");
-      if (back.status === "completed") { setNote(`Gateway completed ${label}.`); status.refetch(); }
-      else if (back.status == null) setErr(`No readback in time — the gateway may be offline. ${label} is still pending.`);
-      else setErr(`Gateway ${back.status} the ${label}${back.reason ? `: ${back.reason}` : ""}.`);
+      const label = commandType.replace(/_/g, " ");
+      if (back.status === "completed") {
+        setNote(`Gateway completed ${label}${back.verified ? " (verified)" : ""}.`);
+        baselineRef.current = clone(form);
+        status.refetch();                          // the new config_revision reloads the form
+      } else if (back.status == null) {
+        setErr(`No readback in time — the gateway may be offline. ${label} is still pending.`);
+      } else {
+        setErr(`Gateway ${back.status} ${label}${back.errorCode ? ` [${back.errorCode}]` : ""}${back.reason ? `: ${back.reason}` : ""}.`);
+      }
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Save failed.");
     } finally { setSaving(false); }
