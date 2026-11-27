@@ -208,7 +208,7 @@ function PanelHead({ title, note }: { title: string; note?: string }) {
  * because the gateway keeps saying `quality: good` about devices that have
  * stopped talking, and only the timestamp can tell.
  */
-type StatusRow = { label: string; online: boolean | null; at?: number | null };
+type StatusRow = { label: string; online: boolean | null; at?: number | null; kw?: number | null };
 
 /** Average cell temperature on the site-scoped backend: S2, not S1 (gatewayCompat POINT_MAP). */
 const avgTempTag = (c: { sourceId: string }) => `${c.sourceId}_bms::avg_cell_temperature`;
@@ -241,12 +241,19 @@ function SystemStatus({ rows, asOf }: { rows: StatusRow[] | null; asOf?: number 
           {rows == null ? "Reading devices…" : "No devices reported"}
         </div>
       )}
-      {rows?.map(({ label, online, at }) => {
+      {rows?.map(({ label, online, at, kw }) => {
         /* The Communication Lost rule (lib/alarms/commLost): nothing captured
            for 15 minutes is lost, whatever the last bit said. */
         const lost = at != null && Date.now() - at > COMM_LOST_MS;
         const word = online == null ? "—" : lost ? "Communication Lost" : online ? "Online" : "Offline";
         const bad = lost || online === false;
+        /* BESS rows carry per-unit power (kw defined); show the charge/discharge
+           badge only while the unit is live. Same ±0.05 kW dead band as the
+           power-station view so a resting unit reads "Idle", not "Discharging". */
+        const act = kw === undefined || bad || online !== true || kw == null ? null
+          : Math.abs(kw) <= 0.05 ? { cls: "gray", word: "Idle" }
+          : kw < 0 ? { cls: "green", word: "Charging" }
+          : { cls: "amber", word: "Discharging" };
         return (
         <div key={label} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderTop: "1px solid var(--line)", opacity: stale ? 0.6 : 1 }}>
           {/* The glyph carries the state as well as the word does, so the row
@@ -258,6 +265,7 @@ function SystemStatus({ rows, asOf }: { rows: StatusRow[] | null; asOf?: number 
           <span style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: "var(--ink)", whiteSpace: "nowrap" }}>
             {label}
           </span>
+          {act && <span className={`pill ${act.cls}`} style={{ marginRight: 2 }}>{act.word}</span>}
           <span style={{
             fontSize: stale ? 12 : 13, fontWeight: stale ? 500 : 700, whiteSpace: "nowrap",
             color: online == null ? "var(--muted)" : bad ? STATUS_BAD : stale ? "var(--muted)" : STATUS_OK,
@@ -452,6 +460,9 @@ export function PerStation({ station }: { station: Station }) {
       label: c.label,
       online: s1Flag(windows, c.bessId, "pcs_online_status", Infinity),
       at: Number.isNaN(t) ? null : t,
+      /* This unit's live power, for the charge/discharge badge (PCS total active
+         power); null when the cabinet is not reporting. */
+      kw: live.battKwBySource?.[c.sourceId] ?? null,
     };
   });
   /* BESS units first, then the shared subsystems, in the one card. Null only
