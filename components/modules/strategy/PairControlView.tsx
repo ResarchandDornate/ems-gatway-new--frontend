@@ -12,18 +12,20 @@
  * Both calls carry the signed-in session's bearer: the /api/central proxy
  * forwards the caller's token, it does not attach one. site_id is added by the
  * proxy (it is a required query parameter on /charge-discharge/latest).
+ *
+ * Step progress (Phase 6.3.10): each pair record carries steps[], run_id and
+ * safe_stop_all in its payload. We render the run's steps with a status icon
+ * and elapsed time, counting up from started_at_utc for the running step (the
+ * gateway only refreshes elapsed_ms on its 5 s heartbeat).
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getSession } from "@/lib/central";
 import { usePasswordGate } from "./controlAuth";
-import { Lock, Unlock } from "lucide-react";
+import { Lock, Unlock, Check, X, Loader2, Circle, Minus } from "lucide-react";
 
 // ── wire-up points ──────────────────────────────────────────────────────────
-// Status is the structured read already shipped (S10). Command submit is the
-// D1 downlink — point it at the real route once the backend command endpoint
-// is live (POST /api/v1/commands does not exist yet: it answers 404).
 const STATUS_URL  = (gatewayId: string) =>
   `/api/central/charge-discharge/latest?gateway_id=${encodeURIComponent(gatewayId)}&limit=20`;
 const AUTO_URL    = (gatewayId: string) =>
@@ -33,6 +35,15 @@ const COMMAND_URL = "/api/central/commands";
 const PAIRS = ["pair_1", "pair_2", "pair_3", "pair_4"] as const;
 type Pair = (typeof PAIRS)[number];
 type Dir  = "charge" | "discharge";
+
+type Step = {
+  key?: string; label?: string; status?: string; message?: string;
+  started_at_utc?: string | null; completed_at_utc?: string | null; elapsed_ms?: number | null;
+};
+type SafeStopAll = {
+  run_id?: string; status?: string; pair_status?: string; current_step?: string;
+  started_at_utc?: string | null; completed_at_utc?: string | null; steps?: Step[];
+};
 
 type PairStatus = {
   pair_id: string | null;
@@ -46,6 +57,7 @@ type PairStatus = {
   pcs_running: boolean | null;
   hard_blocked: boolean | null;
   sample_time_utc?: string | null;
+  payload?: Record<string, unknown> | null;
 };
 
 const num = (v: number | null | undefined, unit: string, dp = 1) =>
@@ -56,6 +68,38 @@ const authHeaders = (): Record<string, string> => {
   const s = getSession();
   return s ? { authorization: `Bearer ${s.token}` } : {};
 };
+
+// payload helpers — the step fields live in the record's verbatim payload.
+const pl = (s?: PairStatus) => (s?.payload && typeof s.payload === "object" ? s.payload : {}) as Record<string, unknown>;
+const stepsOf = (s?: PairStatus) => (Array.isArray(pl(s).steps) ? pl(s).steps as Step[] : []);
+const ssaOf = (s?: PairStatus): SafeStopAll | null => {
+  const v = pl(s).safe_stop_all;
+  return v && typeof v === "object" ? v as SafeStopAll : null;
+};
+
+const fmtElapsed = (ms: number | null | undefined): string => {
+  if (ms == null || !Number.isFinite(ms) || ms < 0) return "";
+  const s = Math.floor(ms / 1000), m = Math.floor(s / 60);
+  return m > 0 ? `${m}m ${String(s % 60).padStart(2, "0")}s` : `${s}s`;
+};
+/** Running step counts up from started_at_utc; a finished step uses elapsed_ms or its span. */
+function stepElapsed(st: Step, now: number): number | null {
+  const start = st.started_at_utc ? Date.parse(st.started_at_utc) : NaN;
+  if ((st.status ?? "").toLowerCase() === "running" && Number.isFinite(start)) return now - start;
+  if (typeof st.elapsed_ms === "number") return st.elapsed_ms;
+  if (Number.isFinite(start) && st.completed_at_utc) return Date.parse(st.completed_at_utc) - start;
+  return null;
+}
+/** A 1s tick while something is running, so the live elapsed updates between heartbeats. */
+function useNow(active: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [active]);
+  return now;
+}
 
 /** The seven allow-listed cloud commands, with what each needs. */
 const COMMANDS = {
@@ -121,6 +165,40 @@ function Card({ eyebrow, note, children }: { eyebrow: string; note?: string; chi
   );
 }
 
+function StepIcon({ status }: { status: string }) {
+  switch (status.toLowerCase()) {
+    case "success": return <Check size={13} className="text-good shrink-0" />;
+    case "failed":  return <X size={13} className="shrink-0" style={{ color: "var(--red)" }} />;
+    case "running": return <Loader2 size={13} className="animate-spin text-accent shrink-0" />;
+    case "skipped": return <Minus size={13} className="text-muted shrink-0" />;
+    default:        return <Circle size={13} className="text-ink3 shrink-0" />;  // pending
+  }
+}
+
+const isTerminal = (s?: string | null) => { const v = (s ?? "").toLowerCase(); return v === "success" || v === "failed"; };
+
+function Steps({ steps, now, settled = false }: { steps: Step[]; now: number; settled?: boolean }) {
+  if (!steps.length) return <p className="text-[11.5px] text-muted py-2">No run steps.</p>;
+  return (
+    <div>
+      {steps.map((s, i) => {
+        const raw = (s.status ?? "pending").toLowerCase();
+        // the gateway can leave a step "running" after the pair settled — show it as done then
+        const status = settled && raw === "running" ? "success" : raw;
+        const el = stepElapsed({ ...s, status }, now);
+        return (
+          <div key={s.key ?? i} className="flex items-center gap-2 py-[5px] border-b border-line last:border-none text-[11.5px]">
+            <StepIcon status={status} />
+            <span className="text-ink2 capitalize shrink-0">{words(s.label ?? s.key)}</span>
+            {s.message && <span className="text-muted truncate" title={s.message}>{s.message}</span>}
+            <span className="font-mono text-ink3 ml-auto shrink-0">{el != null ? fmtElapsed(el) : ""}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── view ─────────────────────────────────────────────────────────────────────
 export function PairControlView({ gatewayId }: { gatewayId: string }) {
   const { data: rows, error: statusErr } = usePairStatus(gatewayId);
@@ -146,6 +224,20 @@ export function PairControlView({ gatewayId }: { gatewayId: string }) {
   const sign = direction === "charge" ? "−" : "+";
   const powerMag = Math.abs(Number(powerKw));
   const powerOk = Number.isFinite(powerMag) && powerMag > 0;
+
+  // Step progress (Phase 6.3.10). selSteps is keyed off run_id so a new run replaces the list.
+  const selSteps = stepsOf(sel);
+  const runId = pl(sel).run_id as string | undefined;
+  const runMode = pl(sel).run_mode as string | undefined;
+  const lastError = pl(sel).last_error as string | undefined;
+  const ssaByPair = PAIRS.map((p) => [p, ssaOf(byPair.get(p))] as const).filter((e): e is readonly [Pair, SafeStopAll] => !!e[1]);
+  const ssaSettled = (v: SafeStopAll) => isTerminal(v.status) || isTerminal(v.pair_status);
+  const ssaActive = ssaByPair.some(([, v]) => !ssaSettled(v));
+  const ssaCompletedAt = ssaByPair.map(([, v]) => v.completed_at_utc).filter(Boolean).sort().pop() as string | undefined;
+  const anyRunning =
+    selSteps.some((s) => (s.status ?? "").toLowerCase() === "running") ||
+    (ssaActive && ssaByPair.some(([, v]) => !ssaSettled(v) && (v.steps ?? []).some((s) => (s.status ?? "").toLowerCase() === "running")));
+  const now = useNow(anyRunning);
 
   /* Start / set-power / precheck need a real magnitude; refused here rather
      than sent as 0 kW. */
@@ -250,6 +342,45 @@ export function PairControlView({ gatewayId }: { gatewayId: string }) {
           );
         })}
       </div>
+
+      {/* Run progress for the selected pair (Phase 6.3.10 steps[]) */}
+      {(selSteps.length > 0 || lastError) && (
+        <Card eyebrow={`Run Progress · ${pair.replace("_", " ").toUpperCase()}`}
+              note={runMode ? `${words(runMode)}${runId ? ` · ${String(runId).slice(0, 8)}` : ""}` : undefined}>
+          <div key={runId ?? "run"}>
+            <Steps steps={selSteps} now={now} />
+          </div>
+          {lastError && (
+            <p className="text-[11.5px] mt-2" style={{ color: "var(--red)" }}>Last error: {lastError}</p>
+          )}
+        </Card>
+      )}
+
+      {/* Safe Stop All — each pair's part of the plant-wide stop, while one is in progress */}
+      {ssaByPair.length > 0 && (
+        <div style={ssaActive ? undefined : { opacity: 0.6 }}>
+          <Card eyebrow={ssaActive ? "Safe Stop All" : "Safe Stop All · last"}
+                note={ssaActive ? "plant-wide stop in progress"
+                      : ssaCompletedAt ? `completed ${new Date(ssaCompletedAt).toLocaleString("en-IN", { hour12: false })}` : "completed"}>
+            <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))" }}>
+              {ssaByPair.map(([p, v]) => {
+                const sstat = (v.pair_status ?? v.status ?? "").toLowerCase();
+                return (
+                  <div key={p} className="surface-card" style={{ padding: "10px 12px" }}>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[12px] font-semibold text-ink">{p.replace("_", " ").toUpperCase()}</span>
+                      <span className={`pill ${sstat === "failed" ? "red" : sstat === "success" ? "green" : "cyan"}`}>
+                        {words(v.pair_status ?? v.status)}
+                      </span>
+                    </div>
+                    <Steps steps={v.steps ?? []} now={now} settled={ssaSettled(v)} />
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+        </div>
+      )}
 
       {/* Command panel */}
       <Card eyebrow="Command" note="Negative power = charging · positive = discharging">

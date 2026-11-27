@@ -225,6 +225,33 @@ function Card({ eyebrow, note, children }: { eyebrow: string; note?: string; chi
 
 const words = (s: string | null | undefined) => (s ? s.replace(/_/g, " ") : "—");
 
+/** The solar power the supervisor is tracking, against the start/stop thresholds in the same
+   record. Shows "unavailable" when the gateway marks the reading stale (solar_fresh false). */
+function SolarBadge({ st }: { st?: StatusRow }) {
+  const p = (st?.payload && typeof st.payload === "object" ? st.payload : {}) as Record<string, unknown>;
+  if (p.solar_kw == null && p.solar_fresh == null) return null;
+  const fresh = p.solar_fresh !== false;
+  const kw = Number(p.solar_kw);
+  const solar = (p.solar && typeof p.solar === "object" ? p.solar : {}) as Record<string, unknown>;
+  const startAbove = Number(solar.start_above_kw), stopBelow = Number(solar.stop_below_kw);
+  const tone = kw >= startAbove ? "text-good" : kw <= stopBelow ? "text-muted" : "text-[#d08700]";
+  return (
+    <div>
+      <div className="ps-stat-k">Solar</div>
+      {!fresh || !Number.isFinite(kw) ? (
+        <div className="text-[12.5px] text-muted">Solar telemetry unavailable</div>
+      ) : (
+        <div className={`text-[12.5px] font-semibold ${tone}`}>
+          {kw.toFixed(0)} kW
+          <span className="text-[11px] text-muted font-normal">
+            {" "}(start above {Number.isFinite(startAbove) ? startAbove : "—"} kW, stop below {Number.isFinite(stopBelow) ? stopBelow : "—"} kW)
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── view ────────────────────────────────────────────────────────────────────
 export function AutomationView({ gatewayId }: { gatewayId: string }) {
   const [form, setForm] = useState<Form>(() => clone(DEFAULTS));
@@ -392,6 +419,7 @@ export function AutomationView({ gatewayId }: { gatewayId: string }) {
             {st ? `${words(st.phase)}${st.direction ? ` · ${words(st.direction)}` : ""}` : "—"}
           </div>
         </div>
+        <SolarBadge st={st} />
         <span className={`pill ${st?.automation_enabled ? "cyan" : "gray"}`}>
           {st?.automation_enabled == null ? "—" : st.automation_enabled ? "Automation On" : "Automation Off"}
         </span>
